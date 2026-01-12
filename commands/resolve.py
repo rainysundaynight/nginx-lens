@@ -40,8 +40,11 @@ def resolve(
     for name, servers in results.items():
         for idx, srv in enumerate(servers):
             upstream_name = name if idx == 0 else ""
-            if srv["resolved"]:
-                table.add_row(upstream_name, srv["address"], f"[green]{srv['resolved']}[/green]")
+            resolved_list = srv["resolved"]
+            if resolved_list:
+                # Показываем все IP-адреса через запятую
+                resolved_str = ", ".join(resolved_list)
+                table.add_row(upstream_name, srv["address"], f"[green]{resolved_str}[/green]")
             else:
                 table.add_row(upstream_name, srv["address"], "[red]Failed to resolve[/red]")
 

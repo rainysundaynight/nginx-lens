@@ -51,15 +51,17 @@ def health(
             color = "green" if srv["healthy"] else "red"
             
             if resolve:
-                resolved = None
+                resolved_list = []
                 if name in resolved_info:
                     for resolved_srv in resolved_info[name]:
                         if resolved_srv["address"] == srv["address"]:
-                            resolved = resolved_srv["resolved"]
+                            resolved_list = resolved_srv["resolved"]
                             break
                 
-                if resolved:
-                    table.add_row(srv["address"], f"[{color}]{status}[/{color}]", resolved)
+                if resolved_list:
+                    # Показываем все IP-адреса через запятую
+                    resolved_str = ", ".join(resolved_list)
+                    table.add_row(srv["address"], f"[{color}]{status}[/{color}]", f"[green]{resolved_str}[/green]")
                 else:
                     table.add_row(srv["address"], f"[{color}]{status}[/{color}]", "[yellow]Failed to resolve[/yellow]")
             else:

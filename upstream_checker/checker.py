@@ -3,7 +3,7 @@
 import socket
 import time
 import http.client
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 def check_tcp(address: str, timeout: float, retries: int) -> bool:
@@ -49,48 +49,61 @@ def check_http(address: str, timeout: float, retries: int) -> bool:
     return False
 
 
-def resolve_address(address: str) -> Optional[str]:
+def resolve_address(address: str) -> List[str]:
     """
-    Резолвит адрес upstream сервера в IP-адрес.
+    Резолвит адрес upstream сервера в IP-адреса.
     
     Args:
         address: Адрес в формате "host:port" или "host:port параметры"
         
     Returns:
-        IP-адрес в формате "ip:port" или None, если резолвинг не удался
+        Список IP-адресов в формате "ip:port" или пустой список, если резолвинг не удался
     """
     try:
         host_port = address.split()[0]
         
         if ":" not in host_port:
-            return None
+            return []
             
         parts = host_port.rsplit(":", 1)
         if len(parts) != 2:
-            return None
+            return []
         host, port = parts
         
+        # Если это уже IPv4 адрес, возвращаем как есть
         try:
             socket.inet_aton(host)
-            return host_port
+            return [host_port]
         except socket.error:
             pass
         
+        # Проверяем IPv6 (в квадратных скобках)
         if host.startswith("[") and host.endswith("]"):
             ipv6_host = host[1:-1]
             try:
                 socket.inet_pton(socket.AF_INET6, ipv6_host)
-                return host_port
+                return [host_port]
             except (socket.error, OSError):
                 pass
         
+        # Пытаемся резолвить DNS имя - получаем все IP-адреса
         try:
-            ip = socket.gethostbyname(host)
-            return f"{ip}:{port}"
+            # gethostbyname_ex возвращает (hostname, aliaslist, ipaddrlist)
+            _, _, ipaddrlist = socket.gethostbyname_ex(host)
+            # Фильтруем только IPv4 адреса (IPv6 обрабатываются отдельно)
+            resolved_ips = []
+            for ip in ipaddrlist:
+                try:
+                    # Проверяем, что это IPv4
+                    socket.inet_aton(ip)
+                    resolved_ips.append(f"{ip}:{port}")
+                except socket.error:
+                    pass
+            return resolved_ips if resolved_ips else []
         except (socket.gaierror, OSError):
-            return None
+            return []
     except (ValueError, IndexError, AttributeError):
-        return None
+        return []
 
 
 def resolve_upstreams(
@@ -102,9 +115,9 @@ def resolve_upstreams(
     Возвращает:
     {
         "backend": [
-            {"address": "example.com:8080", "resolved": "192.168.1.1:8080"},
-            {"address": "127.0.0.1:8080", "resolved": "127.0.0.1:8080"},
-            {"address": "badhost:80", "resolved": None},
+            {"address": "example.com:8080", "resolved": ["192.168.1.1:8080", "192.168.1.2:8080"]},
+            {"address": "127.0.0.1:8080", "resolved": ["127.0.0.1:8080"]},
+            {"address": "badhost:80", "resolved": []},
             ...
         ]
     }
