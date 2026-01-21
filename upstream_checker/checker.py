@@ -4,6 +4,12 @@ import socket
 import time
 import http.client
 from typing import Dict, List
+try:
+    import dns.resolver
+    import dns.exception
+    DNS_AVAILABLE = True
+except ImportError:
+    DNS_AVAILABLE = False
 
 
 def check_tcp(address: str, timeout: float, retries: int) -> bool:
@@ -51,13 +57,17 @@ def check_http(address: str, timeout: float, retries: int) -> bool:
 
 def resolve_address(address: str) -> List[str]:
     """
-    Резолвит адрес upstream сервера в IP-адреса.
+    Резолвит адрес upstream сервера в IP-адреса с информацией о CNAME.
     
     Args:
         address: Адрес в формате "host:port" или "host:port параметры"
         
     Returns:
-        Список IP-адресов в формате "ip:port" или пустой список, если резолвинг не удался
+        Список строк в формате:
+        - "ip:port" - если резолвинг успешен без CNAME
+        - "ip:port (via cname.example.com)" - если есть CNAME и все ок
+        - "invalid resolve (via cname.example.com -> TXT)" - если CNAME ведет на невалидную запись
+        Пустой список, если резолвинг не удался
     """
     try:
         host_port = address.split()[0]
@@ -70,14 +80,12 @@ def resolve_address(address: str) -> List[str]:
             return []
         host, port = parts
         
-        # Если это уже IPv4 адрес, возвращаем как есть
         try:
             socket.inet_aton(host)
             return [host_port]
         except socket.error:
             pass
         
-        # Проверяем IPv6 (в квадратных скобках)
         if host.startswith("[") and host.endswith("]"):
             ipv6_host = host[1:-1]
             try:
@@ -86,23 +94,93 @@ def resolve_address(address: str) -> List[str]:
             except (socket.error, OSError):
                 pass
         
-        # Пытаемся резолвить DNS имя - получаем все IP-адреса
-        try:
-            # gethostbyname_ex возвращает (hostname, aliaslist, ipaddrlist)
-            _, _, ipaddrlist = socket.gethostbyname_ex(host)
-            # Фильтруем только IPv4 адреса (IPv6 обрабатываются отдельно)
-            resolved_ips = []
-            for ip in ipaddrlist:
-                try:
-                    # Проверяем, что это IPv4
-                    socket.inet_aton(ip)
-                    resolved_ips.append(f"{ip}:{port}")
-                except socket.error:
-                    pass
-            return resolved_ips if resolved_ips else []
-        except (socket.gaierror, OSError):
-            return []
+        if DNS_AVAILABLE:
+            return _resolve_with_dns(host, port)
+        else:
+            return _resolve_with_socket(host, port)
     except (ValueError, IndexError, AttributeError):
+        return []
+
+
+def _resolve_with_dns(host: str, port: str) -> List[str]:
+    """Резолвит DNS с использованием dnspython для получения информации о CNAME."""
+    try:
+        cname_info = None
+        invalid_type = None
+        
+        try:
+            cname_answer = dns.resolver.resolve(host, 'CNAME', raise_on_no_answer=False)
+            if cname_answer:
+                cname_target = str(cname_answer[0].target).rstrip('.')
+                cname_info = cname_target
+                
+                try:
+                    a_answer = dns.resolver.resolve(cname_target, 'A', raise_on_no_answer=False)
+                    if a_answer:
+                        resolved_ips = []
+                        for rdata in a_answer:
+                            ip = str(rdata.address)
+                            resolved_ips.append(f"{ip}:{port} (via {cname_info})")
+                        return resolved_ips
+                    else:
+                        try:
+                            txt_answer = dns.resolver.resolve(cname_target, 'TXT', raise_on_no_answer=False)
+                            if txt_answer:
+                                invalid_type = 'TXT'
+                        except:
+                            pass
+                        if not invalid_type:
+                            try:
+                                mx_answer = dns.resolver.resolve(cname_target, 'MX', raise_on_no_answer=False)
+                                if mx_answer:
+                                    invalid_type = 'MX'
+                            except:
+                                pass
+                        if not invalid_type:
+                            try:
+                                ns_answer = dns.resolver.resolve(cname_target, 'NS', raise_on_no_answer=False)
+                                if ns_answer:
+                                    invalid_type = 'NS'
+                            except:
+                                pass
+                        if invalid_type:
+                            return [f"invalid resolve (via {cname_info} -> {invalid_type})"]
+                        else:
+                            return [f"invalid resolve (via {cname_info})"]
+                except Exception:
+                    return [f"invalid resolve (via {cname_info})"]
+        except Exception:
+            pass
+        
+        try:
+            a_answer = dns.resolver.resolve(host, 'A', raise_on_no_answer=False)
+            if a_answer:
+                resolved_ips = []
+                for rdata in a_answer:
+                    ip = str(rdata.address)
+                    resolved_ips.append(f"{ip}:{port}")
+                return resolved_ips if resolved_ips else []
+        except Exception:
+            pass
+        
+        return []
+    except Exception:
+        return []
+
+
+def _resolve_with_socket(host: str, port: str) -> List[str]:
+    """Fallback резолвинг через socket (без информации о CNAME)."""
+    try:
+        _, _, ipaddrlist = socket.gethostbyname_ex(host)
+        resolved_ips = []
+        for ip in ipaddrlist:
+            try:
+                socket.inet_aton(ip)
+                resolved_ips.append(f"{ip}:{port}")
+            except socket.error:
+                pass
+        return resolved_ips if resolved_ips else []
+    except (socket.gaierror, OSError):
         return []
 
 

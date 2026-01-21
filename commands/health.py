@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -22,14 +23,16 @@ def health(
         nginx-lens health /etc/nginx/nginx.conf --timeout 5 --retries 3 --mode http
         nginx-lens health /etc/nginx/nginx.conf --resolve
     """
+    exit_code = 0
+    
     try:
         tree = parse_nginx_config(config_path)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-        return
+        sys.exit(1)
 
     upstreams = tree.get_upstreams()
     results = check_upstreams(upstreams, timeout=timeout, retries=retries, mode=mode.lower())
@@ -50,6 +53,10 @@ def health(
             status = "Healthy" if srv["healthy"] else "Unhealthy"
             color = "green" if srv["healthy"] else "red"
             
+            # Проверяем статус здоровья
+            if not srv["healthy"]:
+                exit_code = 1
+            
             if resolve:
                 resolved_list = []
                 if name in resolved_info:
@@ -61,10 +68,17 @@ def health(
                 if resolved_list:
                     # Показываем все IP-адреса через запятую
                     resolved_str = ", ".join(resolved_list)
-                    table.add_row(srv["address"], f"[{color}]{status}[/{color}]", f"[green]{resolved_str}[/green]")
+                    # Если есть "invalid resolve", показываем красным, иначе зеленым
+                    if any("invalid resolve" in r for r in resolved_list):
+                        table.add_row(srv["address"], f"[{color}]{status}[/{color}]", f"[red]{resolved_str}[/red]")
+                        exit_code = 1
+                    else:
+                        table.add_row(srv["address"], f"[{color}]{status}[/{color}]", f"[green]{resolved_str}[/green]")
                 else:
                     table.add_row(srv["address"], f"[{color}]{status}[/{color}]", "[yellow]Failed to resolve[/yellow]")
+                    exit_code = 1
             else:
                 table.add_row(srv["address"], f"[{color}]{status}[/{color}]")
 
     console.print(table)
+    sys.exit(exit_code)
