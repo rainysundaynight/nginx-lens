@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="nginx-lens",
-    version="0.3.2",
+    version="0.3.3",
     description="CLI-инструмент для анализа, визуализации и диагностики конфигураций Nginx",
     author="Daniil Astrouski",
     author_email="shelovesuastra@gmail.com",
