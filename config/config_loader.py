@@ -95,7 +95,7 @@ class ConfigLoader:
                 "max_workers": 10,
                 "dns_cache_ttl": 300,
                 "top": 10,
-                "nginx_config_path": None,  # Путь к nginx.conf (если None - используется автопоиск)
+                "nginx_config_path": "/etc/nginx/nginx.conf",  # Путь к nginx.conf (по умолчанию стандартный путь)
             },
             "output": {
                 "colors": True,
@@ -193,11 +193,19 @@ class ConfigLoader:
             Путь к nginx.conf или None
         """
         path = self.config.get("defaults", {}).get("nginx_config_path")
+        
+        # Если путь явно установлен в None/null, используем автопоиск
+        if path is None:
+            return _find_default_nginx_config()
+        
+        # Если путь указан (даже если это дефолтный), проверяем существование
         if path:
-            # Проверяем существование файла
             if os.path.exists(path) and os.path.isfile(path):
                 return path
-        # Если не указан в конфиге, пробуем автопоиск
+            # Если файл не существует, пробуем автопоиск как fallback
+            return _find_default_nginx_config()
+        
+        # Если путь пустая строка, используем автопоиск
         return _find_default_nginx_config()
     
     def get_config_path(self) -> Optional[str]:

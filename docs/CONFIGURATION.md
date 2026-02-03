@@ -20,7 +20,7 @@ defaults:
   max_workers: 10       # Максимальное количество потоков для параллельной обработки
   dns_cache_ttl: 300   # Время жизни DNS кэша (сек)
   top: 10               # Количество топ-значений для команды logs
-  nginx_config_path: /etc/nginx/nginx.conf  # Путь к nginx.conf (если не указан - используется автопоиск)
+  nginx_config_path: /etc/nginx/nginx.conf  # Путь к nginx.conf (по умолчанию /etc/nginx/nginx.conf, если файл не существует - используется автопоиск)
 
 output:
   colors: true          # Использовать цвета в выводе

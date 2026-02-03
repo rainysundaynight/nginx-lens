@@ -245,7 +245,7 @@ def create_default_config() -> Tuple[bool, Optional[str]]:
             "max_workers": 10,
             "dns_cache_ttl": 300,
             "top": 10,
-            "nginx_config_path": None,  # Путь к nginx.conf (если None - используется автопоиск)
+            "nginx_config_path": "/etc/nginx/nginx.conf",  # Путь к nginx.conf (по умолчанию стандартный путь)
         },
         "output": {
             "colors": True,
