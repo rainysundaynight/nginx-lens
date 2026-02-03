@@ -36,6 +36,7 @@ def syntax(
     if not os.path.isfile(config_path):
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
         return
+    
     cmd = [nginx_path, "-t", "-c", os.path.abspath(config_path)]
     if hasattr(os, 'geteuid') and os.geteuid() != 0:
         cmd = ["sudo"] + cmd

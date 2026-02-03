@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from rich.tree import Tree
@@ -22,10 +23,10 @@ def include_tree(
         tree = build_include_tree(config_path)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-        return
+        sys.exit(1)
     rich_tree = Tree(f"[bold blue]{config_path}[/bold blue]")
     def _add(node, t):
         for k, v in t.items():

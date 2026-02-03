@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -9,6 +10,7 @@ from analyzer.unused import find_unused_variables
 from parser.nginx_parser import parse_nginx_config
 from analyzer.rewrite import find_rewrite_issues
 from analyzer.dead_locations import find_dead_locations
+from exporter.json_yaml import format_analyze_results, print_export
 
 app = typer.Typer()
 console = Console()
@@ -41,7 +43,11 @@ ISSUE_META = {
 }
 SEVERITY_COLOR = {"high": "red", "medium": "orange3", "low": "yellow"}
 
-def analyze(config_path: str = typer.Argument(..., help="Путь к nginx.conf")):
+def analyze(
+    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
+    yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
+):
     """
     Анализирует конфигурацию Nginx на типовые проблемы и best practices.
 
@@ -62,10 +68,10 @@ def analyze(config_path: str = typer.Argument(..., help="Путь к nginx.conf"
         tree = parse_nginx_config(config_path)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-        return
+        sys.exit(1)
     conflicts = find_location_conflicts(tree)
     dups = find_duplicate_directives(tree)
     empties = find_empty_blocks(tree)

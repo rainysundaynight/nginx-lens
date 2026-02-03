@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from upstream_checker.checker import check_upstreams, resolve_upstreams
 from parser.nginx_parser import parse_nginx_config
+from exporter.json_yaml import format_health_results, print_export
 
 app = typer.Typer()
 console = Console()
@@ -15,6 +16,8 @@ def health(
     mode: str = typer.Option("tcp", help="Режим проверки: tcp или http", case_sensitive=False),
     resolve: bool = typer.Option(False, "--resolve", "-r", help="Показать резолвленные IP-адреса"),
     max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
+    json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
+    yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
 ):
     """
     Проверяет доступность upstream-серверов, определённых в nginx.conf. Выводит таблицу.
@@ -45,6 +48,25 @@ def health(
     if resolve:
         resolved_info = resolve_upstreams(upstreams, max_workers=max_workers)
 
+    # Экспорт в JSON/YAML
+    if json or yaml:
+        export_data = format_health_results(results, resolved_info if resolve else None)
+        format_type = 'json' if json else 'yaml'
+        print_export(export_data, format_type)
+        # Exit code остается прежним
+        for name, servers in results.items():
+            for srv in servers:
+                if not srv["healthy"]:
+                    exit_code = 1
+                if resolve and name in resolved_info:
+                    for resolved_srv in resolved_info[name]:
+                        if resolved_srv["address"] == srv["address"]:
+                            if any("invalid resolve" in r for r in resolved_srv["resolved"]):
+                                exit_code = 1
+                            break
+        sys.exit(exit_code)
+
+    # Обычный вывод в таблицу
     table = Table(show_header=True, header_style="bold blue")
     table.add_column("Address")
     table.add_column("Status")

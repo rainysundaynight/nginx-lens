@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from rich.tree import Tree as RichTree
@@ -38,10 +39,10 @@ def tree(
         tree_obj = parse_nginx_config(config_path)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-        return
+        sys.exit(1)
     root = RichTree(f"[bold blue]nginx.conf[/bold blue]")
     _build_tree(tree_obj.directives, root)
     if markdown:

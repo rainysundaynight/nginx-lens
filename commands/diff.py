@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -24,10 +25,10 @@ def diff(
             lines2 = f2.readlines()
     except FileNotFoundError as e:
         console.print(f"[red]Файл {e.filename} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при чтении файлов: {e}[/red]")
-        return
+        sys.exit(1)
     maxlen = max(len(lines1), len(lines2))
     # Выравниваем длины
     lines1 += [''] * (maxlen - len(lines1))

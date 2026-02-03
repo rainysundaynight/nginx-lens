@@ -1,3 +1,4 @@
+import sys
 import typer
 from rich.console import Console
 from parser.nginx_parser import parse_nginx_config
@@ -21,10 +22,10 @@ def graph(
         tree = parse_nginx_config(config_path)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-        return
+        sys.exit(1)
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-        return
+        sys.exit(1)
     routes = []
     # Для каждого server/location строим маршрут
     def walk(d, chain, upstreams):

@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from upstream_checker.checker import resolve_upstreams
 from parser.nginx_parser import parse_nginx_config
+from exporter.json_yaml import format_resolve_results, print_export
 
 app = typer.Typer()
 console = Console()
@@ -11,6 +12,8 @@ console = Console()
 def resolve(
     config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
     max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
+    json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
+    yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
 ):
     """
     Резолвит DNS имена upstream-серверов в IP-адреса.
@@ -33,11 +36,33 @@ def resolve(
 
     upstreams = tree.get_upstreams()
     if not upstreams:
-        console.print("[yellow]Не найдено ни одного upstream в конфигурации.[/yellow]")
+        if json or yaml:
+            export_data = {
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "upstreams": [],
+                "summary": {"total_upstreams": 0, "total_servers": 0}
+            }
+            format_type = 'json' if json else 'yaml'
+            print_export(export_data, format_type)
+        else:
+            console.print("[yellow]Не найдено ни одного upstream в конфигурации.[/yellow]")
         sys.exit(0)  # Нет upstream - это не ошибка, просто нет чего проверять
     
     results = resolve_upstreams(upstreams, max_workers=max_workers)
 
+    # Экспорт в JSON/YAML
+    if json or yaml:
+        export_data = format_resolve_results(results)
+        format_type = 'json' if json else 'yaml'
+        print_export(export_data, format_type)
+        # Exit code остается прежним
+        for name, servers in results.items():
+            for srv in servers:
+                if not srv["resolved"] or any("invalid resolve" in r for r in srv["resolved"]):
+                    exit_code = 1
+        sys.exit(exit_code)
+
+    # Обычный вывод в таблицу
     table = Table(show_header=True, header_style="bold blue")
     table.add_column("Upstream Name")
     table.add_column("Address")
