@@ -4,6 +4,7 @@ from rich.table import Table
 import subprocess
 import os
 import re
+from config.config_loader import get_config
 
 app = typer.Typer(help="Проверка синтаксиса nginx-конфига через nginx -t с подсветкой ошибок.")
 console = Console()
@@ -24,14 +25,22 @@ def syntax(
         nginx-lens syntax
     """
     if not config_path:
-        candidates = [
-            "/etc/nginx/nginx.conf",
-            "/usr/local/etc/nginx/nginx.conf",
-            "./nginx.conf"
-        ]
-        config_path = next((p for p in candidates if os.path.isfile(p)), None)
+        # Сначала пробуем получить из конфига
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        
+        # Если не найден в конфиге, пробуем автопоиск
         if not config_path:
-            console.print("[red]Не удалось найти nginx.conf. Укажите путь через -c.[/red]")
+            candidates = [
+                "/etc/nginx/nginx.conf",
+                "/usr/local/etc/nginx/nginx.conf",
+                "./nginx.conf"
+            ]
+            config_path = next((p for p in candidates if os.path.isfile(p)), None)
+        
+        if not config_path:
+            console.print("[red]Не удалось найти nginx.conf.[/red]")
+            console.print("[yellow]Укажите путь через -c или настройте nginx_config_path в конфиге.[/yellow]")
             return
     if not os.path.isfile(config_path):
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")

@@ -14,7 +14,7 @@ app = typer.Typer()
 console = Console()
 
 def resolve(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
     yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
@@ -38,6 +38,14 @@ def resolve(
     config = get_config()
     defaults = config.get_defaults()
     cache_config = config.get_cache_config()
+    
+    # Определяем путь к конфигу
+    if not config_path:
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
     
     # Применяем значения из конфига, если не указаны через CLI
     max_workers = max_workers if max_workers is not None else defaults.get("max_workers", 10)

@@ -1,15 +1,17 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.tree import Tree
 from rich.table import Table
 from analyzer.include import build_include_tree, find_include_cycles, find_include_shadowing
+from config.config_loader import get_config
 
 app = typer.Typer()
 console = Console()
 
 def include_tree(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     directive: str = typer.Option(None, help="Показать shadowing для директивы (например, server_name)")
 ):
     """
@@ -18,7 +20,17 @@ def include_tree(
     Пример:
         nginx-lens include-tree /etc/nginx/nginx.conf
         nginx-lens include-tree /etc/nginx/nginx.conf --directive server_name
+        nginx-lens include-tree  # Использует путь из конфига
     """
+    # Определяем путь к конфигу
+    if not config_path:
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
+    
     try:
         tree = build_include_tree(config_path)
     except FileNotFoundError:

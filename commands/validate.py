@@ -54,7 +54,7 @@ SEVERITY_COLOR = {"high": "red", "medium": "orange3", "low": "yellow"}
 
 
 def validate(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     nginx_path: str = typer.Option("nginx", "--nginx-path", help="Путь к бинарю nginx (по умолчанию 'nginx')"),
     check_syntax: bool = typer.Option(True, "--syntax/--no-syntax", help="Проверять синтаксис через nginx -t"),
     check_analysis: bool = typer.Option(True, "--analysis/--no-analysis", help="Выполнять анализ проблем"),
@@ -95,6 +95,14 @@ def validate(
     defaults = config.get_defaults()
     cache_config = config.get_cache_config()
     validate_config = config.get_validate_config()
+    
+    # Определяем путь к конфигу
+    if not config_path:
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
     
     # Применяем значения из конфига, если не указаны через CLI
     timeout_val = timeout if timeout is not None else defaults.get("timeout", 2.0)

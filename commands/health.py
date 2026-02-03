@@ -14,7 +14,7 @@ app = typer.Typer()
 console = Console()
 
 def health(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     timeout: Optional[float] = typer.Option(None, help="Таймаут проверки (сек)"),
     retries: Optional[int] = typer.Option(None, help="Количество попыток"),
     mode: Optional[str] = typer.Option(None, help="Режим проверки: tcp или http", case_sensitive=False),
@@ -44,6 +44,14 @@ def health(
     config = get_config()
     defaults = config.get_defaults()
     cache_config = config.get_cache_config()
+    
+    # Определяем путь к конфигу
+    if not config_path:
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
     
     # Применяем значения из конфига, если не указаны через CLI
     timeout = timeout if timeout is not None else defaults.get("timeout", 2.0)

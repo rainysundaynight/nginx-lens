@@ -8,6 +8,7 @@ from rich import box
 from collections import Counter, defaultdict
 
 from parser.nginx_parser import parse_nginx_config
+from config.config_loader import get_config
 
 app = typer.Typer()
 console = Console()
@@ -287,7 +288,7 @@ def _export_prometheus(metrics: Dict[str, Any]) -> str:
 
 
 def metrics(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     compare_with: Optional[str] = typer.Option(None, "--compare", "-c", help="Путь к другому конфигу для сравнения"),
     prometheus: bool = typer.Option(False, "--prometheus", "-p", help="Экспортировать в формате Prometheus"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
@@ -309,7 +310,17 @@ def metrics(
         nginx-lens metrics /etc/nginx/nginx.conf
         nginx-lens metrics /etc/nginx/nginx.conf --prometheus
         nginx-lens metrics /etc/nginx/nginx.conf --compare /etc/nginx/nginx.conf.old
+        nginx-lens metrics  # Использует путь из конфига
     """
+    # Определяем путь к конфигу
+    if not config_path:
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
+    
     # Собираем метрики
     metrics_data = _collect_metrics(config_path)
     

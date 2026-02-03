@@ -1,8 +1,10 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.tree import Tree as RichTree
 from parser.nginx_parser import parse_nginx_config
+from config.config_loader import get_config
 
 app = typer.Typer()
 console = Console()
@@ -23,7 +25,7 @@ def _build_tree(directives, parent):
             parent.add(f"[cyan]{d['directive']}[/cyan] {d.get('args','')}")
 
 def tree(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     markdown: bool = typer.Option(False, help="Экспортировать в Markdown"),
     html: bool = typer.Option(False, help="Экспортировать в HTML")
 ):
@@ -34,7 +36,17 @@ def tree(
         nginx-lens tree /etc/nginx/nginx.conf
         nginx-lens tree /etc/nginx/nginx.conf --markdown
         nginx-lens tree /etc/nginx/nginx.conf --html
+        nginx-lens tree  # Использует путь из конфига
     """
+    # Определяем путь к конфигу
+    if not config_path:
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
+    
     try:
         tree_obj = parse_nginx_config(config_path)
     except FileNotFoundError:

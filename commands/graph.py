@@ -1,23 +1,35 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from parser.nginx_parser import parse_nginx_config
 from exporter.graph import tree_to_dot, tree_to_mermaid
 from rich.text import Text
 import os
+from config.config_loader import get_config
 
 app = typer.Typer()
 console = Console()
 
 def graph(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf")
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)")
 ):
     """
     Показывает все возможные маршруты nginx в виде цепочек server → location → proxy_pass → upstream → server.
 
     Пример:
         nginx-lens graph /etc/nginx/nginx.conf
+        nginx-lens graph  # Использует путь из конфига
     """
+    # Определяем путь к конфигу
+    if not config_path:
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
+    
     try:
         tree = parse_nginx_config(config_path)
     except FileNotFoundError:

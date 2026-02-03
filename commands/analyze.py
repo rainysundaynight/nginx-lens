@@ -1,4 +1,5 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -11,6 +12,7 @@ from parser.nginx_parser import parse_nginx_config
 from analyzer.rewrite import find_rewrite_issues
 from analyzer.dead_locations import find_dead_locations
 from exporter.json_yaml import format_analyze_results, print_export
+from config.config_loader import get_config
 
 app = typer.Typer()
 console = Console()
@@ -44,7 +46,7 @@ ISSUE_META = {
 SEVERITY_COLOR = {"high": "red", "medium": "orange3", "low": "yellow"}
 
 def analyze(
-    config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    config_path: Optional[str] = typer.Argument(None, help="Путь к nginx.conf (если не указан, используется из конфига или автопоиск)"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
     yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
 ):
@@ -63,7 +65,17 @@ def analyze(
 
     Пример:
         nginx-lens analyze /etc/nginx/nginx.conf
+        nginx-lens analyze  # Использует путь из конфига
     """
+    # Определяем путь к конфигу
+    if not config_path:
+        config = get_config()
+        config_path = config.get_nginx_config_path()
+        if not config_path:
+            console.print("[red]Путь к nginx.conf не указан и не найден автоматически.[/red]")
+            console.print("[yellow]Укажите путь через аргумент или настройте nginx_config_path в конфиге.[/yellow]")
+            sys.exit(1)
+    
     try:
         tree = parse_nginx_config(config_path)
     except FileNotFoundError:

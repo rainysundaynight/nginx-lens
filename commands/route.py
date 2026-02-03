@@ -6,6 +6,7 @@ from analyzer.route import find_route
 from parser.nginx_parser import parse_nginx_config
 import glob
 import os
+from config.config_loader import get_config
 
 app = typer.Typer(help="Показывает, какой server/location обслуживает указанный URL. По умолчанию ищет во всех .conf в /etc/nginx/. Для кастомного пути используйте -c/--config.")
 console = Console()
@@ -28,10 +29,17 @@ def route(
     if config_path:
         configs = [config_path]
     else:
-        configs = glob.glob("/etc/nginx/**/*.conf", recursive=True)
-        if not configs:
-            console.print(Panel("Не найдено ни одного .conf файла в /etc/nginx. Если конфигурация находится в другом месте, используйте опцию -c/--config.", style="red"))
-            return
+        # Сначала пробуем получить из конфига
+        config = get_config()
+        nginx_config_path = config.get_nginx_config_path()
+        if nginx_config_path:
+            configs = [nginx_config_path]
+        else:
+            # Если не найден в конфиге, ищем все .conf в /etc/nginx
+            configs = glob.glob("/etc/nginx/**/*.conf", recursive=True)
+            if not configs:
+                console.print(Panel("Не найдено ни одного .conf файла. Укажите путь через -c/--config или настройте nginx_config_path в конфиге.", style="red"))
+                return
     for conf in configs:
         try:
             tree = parse_nginx_config(conf)

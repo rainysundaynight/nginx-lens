@@ -7,6 +7,24 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 
+def _find_default_nginx_config() -> Optional[str]:
+    """
+    Ищет nginx.conf в стандартных местах.
+    
+    Returns:
+        Путь к nginx.conf или None
+    """
+    candidates = [
+        "/etc/nginx/nginx.conf",
+        "/usr/local/etc/nginx/nginx.conf",
+        "./nginx.conf",
+    ]
+    for path in candidates:
+        if os.path.exists(path) and os.path.isfile(path):
+            return path
+    return None
+
+
 class ConfigLoader:
     """
     Загрузчик конфигурационного файла для nginx-lens.
@@ -77,6 +95,7 @@ class ConfigLoader:
                 "max_workers": 10,
                 "dns_cache_ttl": 300,
                 "top": 10,
+                "nginx_config_path": None,  # Путь к nginx.conf (если None - используется автопоиск)
             },
             "output": {
                 "colors": True,
@@ -165,6 +184,21 @@ class ConfigLoader:
             Словарь с настройками validate
         """
         return self.config.get("validate", {})
+    
+    def get_nginx_config_path(self) -> Optional[str]:
+        """
+        Получает путь к nginx.conf из конфигурации или автопоиск.
+        
+        Returns:
+            Путь к nginx.conf или None
+        """
+        path = self.config.get("defaults", {}).get("nginx_config_path")
+        if path:
+            # Проверяем существование файла
+            if os.path.exists(path) and os.path.isfile(path):
+                return path
+        # Если не указан в конфиге, пробуем автопоиск
+        return _find_default_nginx_config()
     
     def get_config_path(self) -> Optional[str]:
         """

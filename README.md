@@ -20,6 +20,7 @@ defaults:
   max_workers: 10       # Максимальное количество потоков для параллельной обработки
   dns_cache_ttl: 300   # Время жизни DNS кэша (сек)
   top: 10               # Количество топ-значений для команды logs
+  nginx_config_path: /etc/nginx/nginx.conf  # Путь к nginx.conf (если не указан - используется автопоиск)
 
 output:
   colors: true          # Использовать цвета в выводе
@@ -69,11 +70,11 @@ validate:
 
 **Синтаксис:**
 ```bash
-nginx-lens health <config_path> [OPTIONS]
+nginx-lens health [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига (`defaults.nginx_config_path`) или автопоиск в стандартных местах
 
 **Опции:**
 
@@ -91,20 +92,23 @@ nginx-lens health <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовая проверка
+# Базовая проверка (использует путь из конфига)
+nginx-lens health
+
+# С указанием пути
 nginx-lens health /etc/nginx/nginx.conf
 
 # С дополнительными опциями
 nginx-lens health /etc/nginx/nginx.conf --timeout 5 --retries 3 --mode http
 
-# С резолвингом DNS
-nginx-lens health /etc/nginx/nginx.conf --resolve
+# С резолвингом DNS (использует путь из конфига)
+nginx-lens health --resolve
 
 # Экспорт в JSON
-nginx-lens health /etc/nginx/nginx.conf --resolve --json
+nginx-lens health --resolve --json
 
 # С увеличенным количеством потоков
-nginx-lens health /etc/nginx/nginx.conf --max-workers 20
+nginx-lens health --max-workers 20
 ```
 
 **Exit codes:**
@@ -119,11 +123,11 @@ nginx-lens health /etc/nginx/nginx.conf --max-workers 20
 
 **Синтаксис:**
 ```bash
-nginx-lens resolve <config_path> [OPTIONS]
+nginx-lens resolve [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -137,17 +141,20 @@ nginx-lens resolve <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовый резолвинг
+# Базовый резолвинг (использует путь из конфига)
+nginx-lens resolve
+
+# С указанием пути
 nginx-lens resolve /etc/nginx/nginx.conf
 
 # С увеличенным количеством потоков
-nginx-lens resolve /etc/nginx/nginx.conf --max-workers 20
+nginx-lens resolve --max-workers 20
 
 # Без кэширования
-nginx-lens resolve /etc/nginx/nginx.conf --no-cache
+nginx-lens resolve --no-cache
 
 # Экспорт в YAML
-nginx-lens resolve /etc/nginx/nginx.conf --yaml
+nginx-lens resolve --yaml
 ```
 
 **Exit codes:**
@@ -162,11 +169,11 @@ nginx-lens resolve /etc/nginx/nginx.conf --yaml
 
 **Синтаксис:**
 ```bash
-nginx-lens analyze <config_path> [OPTIONS]
+nginx-lens analyze [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -205,11 +212,14 @@ nginx-lens analyze <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовый анализ
+# Базовый анализ (использует путь из конфига)
+nginx-lens analyze
+
+# С указанием пути
 nginx-lens analyze /etc/nginx/nginx.conf
 
 # Экспорт в JSON
-nginx-lens analyze /etc/nginx/nginx.conf --json
+nginx-lens analyze --json
 ```
 
 **Exit codes:**
@@ -224,11 +234,11 @@ nginx-lens analyze /etc/nginx/nginx.conf --json
 
 **Синтаксис:**
 ```bash
-nginx-lens validate <config_path> [OPTIONS]
+nginx-lens validate [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -246,17 +256,20 @@ nginx-lens validate <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Полная валидация
+# Полная валидация (использует путь из конфига)
+nginx-lens validate
+
+# С указанием пути
 nginx-lens validate /etc/nginx/nginx.conf
 
 # Без проверки upstream
-nginx-lens validate /etc/nginx/nginx.conf --no-upstream
+nginx-lens validate --no-upstream
 
 # С DNS проверкой и экспортом в JSON
-nginx-lens validate /etc/nginx/nginx.conf --dns --json
+nginx-lens validate --dns --json
 
 # Только синтаксис
-nginx-lens validate /etc/nginx/nginx.conf --no-analysis --no-upstream --no-dns
+nginx-lens validate --no-analysis --no-upstream --no-dns
 ```
 
 **Exit codes:**
@@ -307,11 +320,11 @@ nginx-lens syntax --nginx-path /usr/local/bin/nginx
 
 **Синтаксис:**
 ```bash
-nginx-lens tree <config_path> [OPTIONS]
+nginx-lens tree [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -322,14 +335,17 @@ nginx-lens tree <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовый вывод
+# Базовый вывод (использует путь из конфига)
+nginx-lens tree
+
+# С указанием пути
 nginx-lens tree /etc/nginx/nginx.conf
 
 # Экспорт в Markdown
-nginx-lens tree /etc/nginx/nginx.conf --markdown > config-tree.md
+nginx-lens tree --markdown > config-tree.md
 
 # Экспорт в HTML
-nginx-lens tree /etc/nginx/nginx.conf --html > config-tree.html
+nginx-lens tree --html > config-tree.html
 ```
 
 ---
@@ -394,11 +410,11 @@ nginx-lens route -c /etc/nginx/nginx.conf http://example.com/api/v1
 
 **Синтаксис:**
 ```bash
-nginx-lens include-tree <config_path> [OPTIONS]
+nginx-lens include-tree [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -408,11 +424,14 @@ nginx-lens include-tree <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовый вывод дерева include
+# Базовый вывод дерева include (использует путь из конфига)
+nginx-lens include-tree
+
+# С указанием пути
 nginx-lens include-tree /etc/nginx/nginx.conf
 
 # Показать shadowing для server_name
-nginx-lens include-tree /etc/nginx/nginx.conf --directive server_name
+nginx-lens include-tree --directive server_name
 ```
 
 ---
@@ -423,15 +442,18 @@ nginx-lens include-tree /etc/nginx/nginx.conf --directive server_name
 
 **Синтаксис:**
 ```bash
-nginx-lens graph <config_path>
+nginx-lens graph [config_path]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Примеры:**
 ```bash
-# Визуализация графа
+# Визуализация графа (использует путь из конфига)
+nginx-lens graph
+
+# С указанием пути
 nginx-lens graph /etc/nginx/nginx.conf
 ```
 
@@ -491,11 +513,11 @@ nginx-lens logs /var/log/nginx/access.log --csv > analysis.csv
 
 **Синтаксис:**
 ```bash
-nginx-lens metrics <config_path> [OPTIONS]
+nginx-lens metrics [config_path] [OPTIONS]
 ```
 
 **Аргументы:**
-- `config_path` (обязательный) - Путь к nginx.conf
+- `config_path` (опциональный) - Путь к nginx.conf. Если не указан, используется путь из конфига или автопоиск
 
 **Опции:**
 
@@ -508,17 +530,20 @@ nginx-lens metrics <config_path> [OPTIONS]
 
 **Примеры:**
 ```bash
-# Базовый сбор метрик
+# Базовый сбор метрик (использует путь из конфига)
+nginx-lens metrics
+
+# С указанием пути
 nginx-lens metrics /etc/nginx/nginx.conf
 
 # Экспорт в Prometheus
-nginx-lens metrics /etc/nginx/nginx.conf --prometheus
+nginx-lens metrics --prometheus
 
 # Сравнение с предыдущей версией
-nginx-lens metrics /etc/nginx/nginx.conf --compare /etc/nginx/nginx.conf.old
+nginx-lens metrics --compare /etc/nginx/nginx.conf.old
 
 # Экспорт в JSON
-nginx-lens metrics /etc/nginx/nginx.conf --json
+nginx-lens metrics --json
 ```
 
 ---
@@ -683,3 +708,4 @@ nginx-lens <command> --help
 ```bash
 nginx-lens --help
 ```
+
