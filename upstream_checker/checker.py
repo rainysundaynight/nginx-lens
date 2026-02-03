@@ -3,14 +3,17 @@
 import socket
 import time
 import http.client
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from utils.progress import ProgressManager
 try:
     import dns.resolver
     import dns.exception
     DNS_AVAILABLE = True
 except ImportError:
     DNS_AVAILABLE = False
+
+from upstream_checker.dns_cache import get_cache, is_cache_enabled, disable_cache, enable_cache
 
 
 def check_tcp(address: str, timeout: float, retries: int) -> bool:
@@ -56,12 +59,15 @@ def check_http(address: str, timeout: float, retries: int) -> bool:
     return False
 
 
-def resolve_address(address: str) -> List[str]:
+def resolve_address(address: str, use_cache: bool = True, cache_ttl: int = 300, cache_dir: Optional[str] = None) -> List[str]:
     """
     Резолвит адрес upstream сервера в IP-адреса с информацией о CNAME.
     
     Args:
         address: Адрес в формате "host:port" или "host:port параметры"
+        use_cache: Использовать ли кэш (по умолчанию True)
+        cache_ttl: Время жизни кэша в секундах (по умолчанию 300)
+        cache_dir: Директория для кэша (опционально)
         
     Returns:
         Список строк в формате:
@@ -81,6 +87,7 @@ def resolve_address(address: str) -> List[str]:
             return []
         host, port = parts
         
+        # Проверка на IP адрес (не кэшируем IP адреса)
         try:
             socket.inet_aton(host)
             return [host_port]
@@ -95,10 +102,25 @@ def resolve_address(address: str) -> List[str]:
             except (socket.error, OSError):
                 pass
         
+        # Проверяем кэш перед резолвингом
+        if use_cache and is_cache_enabled():
+            cache = get_cache(ttl=cache_ttl, cache_dir=cache_dir)
+            cached_result = cache.get(host, port)
+            if cached_result is not None:
+                return cached_result
+        
+        # Выполняем резолвинг
         if DNS_AVAILABLE:
-            return _resolve_with_dns(host, port)
+            result = _resolve_with_dns(host, port)
         else:
-            return _resolve_with_socket(host, port)
+            result = _resolve_with_socket(host, port)
+        
+        # Сохраняем в кэш
+        if use_cache and is_cache_enabled():
+            cache = get_cache(ttl=cache_ttl, cache_dir=cache_dir)
+            cache.set(host, port, result)
+        
+        return result
     except (ValueError, IndexError, AttributeError):
         return []
 
@@ -187,7 +209,11 @@ def _resolve_with_socket(host: str, port: str) -> List[str]:
 
 def resolve_upstreams(
     upstreams: Dict[str, List[str]],
-    max_workers: int = 10
+    max_workers: int = 10,
+    use_cache: bool = True,
+    cache_ttl: int = 300,
+    cache_dir: Optional[str] = None,
+    progress_manager: Optional[ProgressManager] = None
 ) -> Dict[str, List[dict]]:
     """
     Резолвит DNS имена upstream-серверов в IP-адреса.
@@ -195,6 +221,9 @@ def resolve_upstreams(
     Args:
         upstreams: Словарь upstream серверов
         max_workers: Максимальное количество потоков для параллельной обработки
+        use_cache: Использовать ли кэш (по умолчанию True)
+        cache_ttl: Время жизни кэша в секундах (по умолчанию 300)
+        cache_dir: Директория для кэша (опционально)
     
     Возвращает:
     {
@@ -226,7 +255,10 @@ def resolve_upstreams(
     
     # Параллельная обработка резолвинга
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_key = {executor.submit(resolve_address, srv): key for key, srv in tasks}
+        future_to_key = {
+            executor.submit(resolve_address, srv, use_cache, cache_ttl, cache_dir): key 
+            for key, srv in tasks
+        }
         
         for future in as_completed(future_to_key):
             key = future_to_key[future]
@@ -260,7 +292,8 @@ def check_upstreams(
     timeout: float = 2.0,
     retries: int = 1,
     mode: str = "tcp",
-    max_workers: int = 10
+    max_workers: int = 10,
+    progress_manager: Optional[ProgressManager] = None
 ) -> Dict[str, List[dict]]:
     """
     Проверяет доступность upstream-серверов.
@@ -305,6 +338,9 @@ def check_upstreams(
             for key, srv in tasks
         }
         
+        completed = 0
+        total = len(tasks)
+        
         for future in as_completed(future_to_key):
             key = future_to_key[future]
             name, idx = task_to_key[key]
@@ -313,5 +349,9 @@ def check_upstreams(
                 results[name][idx] = {"address": srv, "healthy": healthy}
             except Exception:
                 results[name][idx] = {"address": key[2], "healthy": False}
+            
+            completed += 1
+            if progress_manager:
+                progress_manager.update(completed, total=total, description=f"Проверка upstream серверов ({completed}/{total})")
     
     return results

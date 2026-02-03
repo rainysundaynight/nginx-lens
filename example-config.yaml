@@ -1,0 +1,25 @@
+# Пример конфигурационного файла для nginx-lens
+# Разместите этот файл в ~/.nginx-lens/config.yaml или .nginx-lens.yaml
+
+defaults:
+  timeout: 3.0          # Таймаут проверки upstream (сек)
+  retries: 2            # Количество попыток
+  mode: tcp             # Режим проверки: tcp или http
+  max_workers: 20       # Максимальное количество потоков для параллельной обработки
+  dns_cache_ttl: 300    # Время жизни DNS кэша (сек)
+  top: 10                # Количество топ-значений для команды logs
+
+output:
+  colors: true          # Использовать цвета в выводе
+  format: table         # Формат вывода: table, json, yaml
+
+cache:
+  enabled: true         # Включить DNS кэширование
+  ttl: 300             # Время жизни кэша (сек)
+
+validate:
+  check_syntax: true    # Проверять синтаксис через nginx -t
+  check_analysis: true  # Выполнять анализ проблем
+  check_upstream: true  # Проверять доступность upstream
+  check_dns: false      # Проверять DNS резолвинг upstream (по умолчанию выключено)
+  nginx_path: nginx     # Путь к бинарю nginx

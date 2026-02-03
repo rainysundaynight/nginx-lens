@@ -1,29 +1,54 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
 from upstream_checker.checker import resolve_upstreams
+from upstream_checker.dns_cache import disable_cache, enable_cache, clear_cache
 from parser.nginx_parser import parse_nginx_config
 from exporter.json_yaml import format_resolve_results, print_export
+from config.config_loader import get_config
+from utils.progress import ProgressManager
 
 app = typer.Typer()
 console = Console()
 
 def resolve(
     config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
-    max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
+    max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
     yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Отключить кэширование DNS резолвинга"),
+    cache_ttl: Optional[int] = typer.Option(None, "--cache-ttl", help="Время жизни кэша в секундах"),
 ):
     """
     Резолвит DNS имена upstream-серверов в IP-адреса.
     Использует параллельную обработку для ускорения резолвинга множества upstream серверов.
+    Поддерживает кэширование результатов DNS резолвинга для ускорения повторных запусков.
 
     Пример:
         nginx-lens resolve /etc/nginx/nginx.conf
         nginx-lens resolve /etc/nginx/nginx.conf --max-workers 20
+        nginx-lens resolve /etc/nginx/nginx.conf --no-cache
+        nginx-lens resolve /etc/nginx/nginx.conf --cache-ttl 600
     """
     exit_code = 0
+    
+    # Загружаем конфигурацию
+    config = get_config()
+    defaults = config.get_defaults()
+    cache_config = config.get_cache_config()
+    
+    # Применяем значения из конфига, если не указаны через CLI
+    max_workers = max_workers if max_workers is not None else defaults.get("max_workers", 10)
+    cache_ttl = cache_ttl if cache_ttl is not None else cache_config.get("ttl", defaults.get("dns_cache_ttl", 300))
+    
+    # Управление кэшем
+    use_cache = not no_cache and cache_config.get("enabled", True)
+    if no_cache:
+        disable_cache()
+    else:
+        enable_cache()
     
     try:
         tree = parse_nginx_config(config_path)
@@ -48,7 +73,12 @@ def resolve(
             console.print("[yellow]Не найдено ни одного upstream в конфигурации.[/yellow]")
         sys.exit(0)  # Нет upstream - это не ошибка, просто нет чего проверять
     
-    results = resolve_upstreams(upstreams, max_workers=max_workers)
+    # Подсчитываем общее количество серверов для прогресс-бара
+    total_servers = sum(len(servers) for servers in upstreams.values())
+    
+    # Резолвинг с прогресс-баром
+    with ProgressManager(description="Резолвинг DNS", show_progress=total_servers > 5) as pm:
+        results = resolve_upstreams(upstreams, max_workers=max_workers, use_cache=use_cache, cache_ttl=cache_ttl, progress_manager=pm)
 
     # Экспорт в JSON/YAML
     if json or yaml:

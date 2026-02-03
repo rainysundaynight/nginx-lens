@@ -1,4 +1,5 @@
 import sys
+from typing import Optional, List, Dict, Any
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -6,9 +7,9 @@ import re
 import gzip
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
-from typing import Optional, List, Dict, Any
 from exporter.json_yaml import format_logs_results, print_export
 from exporter.csv import export_logs_to_csv
+from config.config_loader import get_config
 
 app = typer.Typer(help="Анализ access.log/error.log: топ-статусы, пути, IP, User-Agent, ошибки.")
 console = Console()
@@ -23,7 +24,7 @@ log_line_re = re.compile(
 
 def logs(
     log_path: str = typer.Argument(..., help="Путь к access.log или error.log"),
-    top: int = typer.Option(10, help="Сколько топ-значений выводить"),
+    top: Optional[int] = typer.Option(None, help="Сколько топ-значений выводить"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
     yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
     csv: bool = typer.Option(False, "--csv", help="Экспортировать результаты в CSV"),
@@ -49,6 +50,13 @@ def logs(
         nginx-lens logs /var/log/nginx/access.log --since "2024-01-01" --status 404,500
         nginx-lens logs /var/log/nginx/access.log.gz --detect-anomalies --json
     """
+    # Загружаем конфигурацию
+    config = get_config()
+    defaults = config.get_defaults()
+    
+    # Применяем значения из конфига, если не указаны через CLI
+    top = top if top is not None else defaults.get("top", 10)
+    
     # Парсинг фильтров
     status_filter = None
     if status:

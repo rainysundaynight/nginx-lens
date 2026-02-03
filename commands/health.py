@@ -1,35 +1,63 @@
 import sys
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
 from upstream_checker.checker import check_upstreams, resolve_upstreams
+from upstream_checker.dns_cache import disable_cache, enable_cache
 from parser.nginx_parser import parse_nginx_config
 from exporter.json_yaml import format_health_results, print_export
+from config.config_loader import get_config
+from utils.progress import ProgressManager
 
 app = typer.Typer()
 console = Console()
 
 def health(
     config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
-    timeout: float = typer.Option(2.0, help="Таймаут проверки (сек)"),
-    retries: int = typer.Option(1, help="Количество попыток"),
-    mode: str = typer.Option("tcp", help="Режим проверки: tcp или http", case_sensitive=False),
+    timeout: Optional[float] = typer.Option(None, help="Таймаут проверки (сек)"),
+    retries: Optional[int] = typer.Option(None, help="Количество попыток"),
+    mode: Optional[str] = typer.Option(None, help="Режим проверки: tcp или http", case_sensitive=False),
     resolve: bool = typer.Option(False, "--resolve", "-r", help="Показать резолвленные IP-адреса"),
-    max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
+    max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
     json: bool = typer.Option(False, "--json", help="Экспортировать результаты в JSON"),
     yaml: bool = typer.Option(False, "--yaml", help="Экспортировать результаты в YAML"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Отключить кэширование DNS резолвинга"),
+    cache_ttl: Optional[int] = typer.Option(None, "--cache-ttl", help="Время жизни кэша в секундах"),
 ):
     """
     Проверяет доступность upstream-серверов, определённых в nginx.conf. Выводит таблицу.
     Использует параллельную обработку для ускорения проверки множества upstream серверов.
+    Поддерживает кэширование результатов DNS резолвинга для ускорения повторных запусков.
 
     Пример:
         nginx-lens health /etc/nginx/nginx.conf
         nginx-lens health /etc/nginx/nginx.conf --timeout 5 --retries 3 --mode http
         nginx-lens health /etc/nginx/nginx.conf --resolve
         nginx-lens health /etc/nginx/nginx.conf --max-workers 20
+        nginx-lens health /etc/nginx/nginx.conf --resolve --no-cache
+        nginx-lens health /etc/nginx/nginx.conf --resolve --cache-ttl 600
     """
     exit_code = 0
+    
+    # Загружаем конфигурацию
+    config = get_config()
+    defaults = config.get_defaults()
+    cache_config = config.get_cache_config()
+    
+    # Применяем значения из конфига, если не указаны через CLI
+    timeout = timeout if timeout is not None else defaults.get("timeout", 2.0)
+    retries = retries if retries is not None else defaults.get("retries", 1)
+    mode = mode if mode is not None else defaults.get("mode", "tcp")
+    max_workers = max_workers if max_workers is not None else defaults.get("max_workers", 10)
+    cache_ttl = cache_ttl if cache_ttl is not None else cache_config.get("ttl", defaults.get("dns_cache_ttl", 300))
+    
+    # Управление кэшем
+    use_cache = not no_cache and cache_config.get("enabled", True)
+    if no_cache:
+        disable_cache()
+    else:
+        enable_cache()
     
     try:
         tree = parse_nginx_config(config_path)
@@ -41,12 +69,19 @@ def health(
         sys.exit(1)
 
     upstreams = tree.get_upstreams()
-    results = check_upstreams(upstreams, timeout=timeout, retries=retries, mode=mode.lower(), max_workers=max_workers)
+    
+    # Подсчитываем общее количество серверов для прогресс-бара
+    total_servers = sum(len(servers) for servers in upstreams.values())
+    
+    # Проверка upstream с прогресс-баром
+    with ProgressManager(description="Проверка upstream серверов", show_progress=total_servers > 5) as pm:
+        results = check_upstreams(upstreams, timeout=timeout, retries=retries, mode=mode.lower(), max_workers=max_workers, progress_manager=pm)
     
     # Если нужно показать резолвленные IP-адреса
     resolved_info = {}
     if resolve:
-        resolved_info = resolve_upstreams(upstreams, max_workers=max_workers)
+        with ProgressManager(description="Резолвинг DNS", show_progress=total_servers > 5) as pm:
+            resolved_info = resolve_upstreams(upstreams, max_workers=max_workers, use_cache=use_cache, cache_ttl=cache_ttl, progress_manager=pm)
 
     # Экспорт в JSON/YAML
     if json or yaml:
