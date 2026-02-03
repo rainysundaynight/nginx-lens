@@ -227,10 +227,10 @@ def create_default_config():
     Создает директорию /opt/nginx-lens и дефолтный конфиг.
     
     Returns:
-        True если успешно, False иначе
+        Tuple[bool, Optional[str]]: (успешно ли, сообщение об ошибке или None)
     """
     if yaml is None:
-        return False
+        return False, "PyYAML не установлен"
     
     opt_dir = Path("/opt/nginx-lens")
     config_file = opt_dir / "config.yaml"
@@ -265,27 +265,37 @@ def create_default_config():
     try:
         # Создаем директорию если нужно
         if not opt_dir.exists():
-            opt_dir.mkdir(parents=True, mode=0o755, exist_ok=True)
+            try:
+                opt_dir.mkdir(parents=True, mode=0o755, exist_ok=True)
+            except PermissionError as e:
+                return False, f"Нет прав для создания директории /opt/nginx-lens (требуются права root): {e}"
+            except OSError as e:
+                return False, f"Ошибка при создании директории /opt/nginx-lens: {e}"
         
         # Проверяем, существует ли уже конфиг
         if config_file.exists():
             # Конфиг уже существует, не перезаписываем
-            return True
+            return True, None
         
         # Создаем дефолтный конфиг
-        with open(config_file, 'w') as f:
-            yaml.dump(default_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        try:
+            with open(config_file, 'w') as f:
+                yaml.dump(default_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        except PermissionError as e:
+            return False, f"Нет прав для создания файла {config_file} (требуются права root): {e}"
+        except IOError as e:
+            return False, f"Ошибка записи в файл {config_file}: {e}"
         
         # Устанавливаем права доступа
-        config_file.chmod(0o644)
+        try:
+            config_file.chmod(0o644)
+        except Exception:
+            # Не критично, если не удалось установить права
+            pass
         
-        return True
-    except PermissionError:
-        # Нет прав для создания в /opt, это нормально
-        return False
+        return True, None
     except Exception as e:
-        # Другая ошибка
-        return False
+        return False, f"Неожиданная ошибка: {e}"
 
 
 def post_install():
@@ -294,13 +304,17 @@ def post_install():
     """
     # Создаем дефолтный конфиг в /opt/nginx-lens
     try:
-        if create_default_config():
-            print("✓ Конфигурационный файл создан в /opt/nginx-lens/config.yaml")
+        success, error_msg = create_default_config()
+        if success:
+            print("✓ Конфигурационный файл создан в /opt/nginx-lens/config.yaml", file=sys.stderr)
         else:
-            print("⚠ Не удалось создать конфиг в /opt/nginx-lens (требуются права root)")
-            print("  Конфиг можно создать вручную: nginx-lens completion show-instructions")
+            print(f"⚠ Не удалось создать конфиг в /opt/nginx-lens: {error_msg}", file=sys.stderr)
+            print("  Для создания конфига выполните:", file=sys.stderr)
+            print("    sudo mkdir -p /opt/nginx-lens", file=sys.stderr)
+            print("    sudo nginx-lens completion show-instructions", file=sys.stderr)
+            print("  Или создайте конфиг вручную в ~/.nginx-lens/config.yaml", file=sys.stderr)
     except Exception as e:
-        print(f"⚠ Ошибка при создании конфига: {e}")
+        print(f"⚠ Ошибка при создании конфига: {e}", file=sys.stderr)
     
     # Определяем shell
     shell = detect_shell()
@@ -312,13 +326,13 @@ def post_install():
     # Пробуем установить completion
     try:
         if install_completion(shell, dry_run=False):
-            print(f"✓ Автодополнение для {shell} установлено автоматически")
+            print(f"✓ Автодополнение для {shell} установлено автоматически", file=sys.stderr)
             if shell in ['bash', 'zsh']:
-                print(f"  Выполните 'source ~/.{shell}rc' для применения изменений")
+                print(f"  Выполните 'source ~/.{shell}rc' для применения изменений", file=sys.stderr)
         else:
-            print(f"⚠ Не удалось автоматически установить автодополнение для {shell}")
-            print(f"  Выполните вручную: nginx-lens completion install {shell}")
+            print(f"⚠ Не удалось автоматически установить автодополнение для {shell}", file=sys.stderr)
+            print(f"  Выполните вручную: nginx-lens completion install {shell}", file=sys.stderr)
     except Exception as e:
-        print(f"⚠ Ошибка при установке автодополнения: {e}")
-        print(f"  Выполните вручную: nginx-lens completion install {shell}")
+        print(f"⚠ Ошибка при установке автодополнения: {e}", file=sys.stderr)
+        print(f"  Выполните вручную: nginx-lens completion install {shell}", file=sys.stderr)
 

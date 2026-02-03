@@ -23,7 +23,7 @@ class PostInstallCommand(install):
 
 setup(
     name="nginx-lens",
-    version="0.5.1",
+    version="0.5.2",
     description="CLI-инструмент для анализа, визуализации и диагностики конфигураций Nginx",
     author="Daniil Astrouski",
     author_email="shelovesuastra@gmail.com",
