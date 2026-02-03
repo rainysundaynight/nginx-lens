@@ -10,12 +10,15 @@ console = Console()
 
 def resolve(
     config_path: str = typer.Argument(..., help="Путь к nginx.conf"),
+    max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
 ):
     """
     Резолвит DNS имена upstream-серверов в IP-адреса.
+    Использует параллельную обработку для ускорения резолвинга множества upstream серверов.
 
     Пример:
         nginx-lens resolve /etc/nginx/nginx.conf
+        nginx-lens resolve /etc/nginx/nginx.conf --max-workers 20
     """
     exit_code = 0
     
@@ -33,7 +36,7 @@ def resolve(
         console.print("[yellow]Не найдено ни одного upstream в конфигурации.[/yellow]")
         sys.exit(0)  # Нет upstream - это не ошибка, просто нет чего проверять
     
-    results = resolve_upstreams(upstreams)
+    results = resolve_upstreams(upstreams, max_workers=max_workers)
 
     table = Table(show_header=True, header_style="bold blue")
     table.add_column("Upstream Name")

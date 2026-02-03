@@ -14,14 +14,17 @@ def health(
     retries: int = typer.Option(1, help="Количество попыток"),
     mode: str = typer.Option("tcp", help="Режим проверки: tcp или http", case_sensitive=False),
     resolve: bool = typer.Option(False, "--resolve", "-r", help="Показать резолвленные IP-адреса"),
+    max_workers: int = typer.Option(10, "--max-workers", "-w", help="Максимальное количество потоков для параллельной обработки"),
 ):
     """
     Проверяет доступность upstream-серверов, определённых в nginx.conf. Выводит таблицу.
+    Использует параллельную обработку для ускорения проверки множества upstream серверов.
 
     Пример:
         nginx-lens health /etc/nginx/nginx.conf
         nginx-lens health /etc/nginx/nginx.conf --timeout 5 --retries 3 --mode http
         nginx-lens health /etc/nginx/nginx.conf --resolve
+        nginx-lens health /etc/nginx/nginx.conf --max-workers 20
     """
     exit_code = 0
     
@@ -35,12 +38,12 @@ def health(
         sys.exit(1)
 
     upstreams = tree.get_upstreams()
-    results = check_upstreams(upstreams, timeout=timeout, retries=retries, mode=mode.lower())
+    results = check_upstreams(upstreams, timeout=timeout, retries=retries, mode=mode.lower(), max_workers=max_workers)
     
     # Если нужно показать резолвленные IP-адреса
     resolved_info = {}
     if resolve:
-        resolved_info = resolve_upstreams(upstreams)
+        resolved_info = resolve_upstreams(upstreams, max_workers=max_workers)
 
     table = Table(show_header=True, header_style="bold blue")
     table.add_column("Address")

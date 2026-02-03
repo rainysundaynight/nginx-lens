@@ -3,7 +3,8 @@
 import socket
 import time
 import http.client
-from typing import Dict, List
+from typing import Dict, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
     import dns.resolver
     import dns.exception
@@ -185,10 +186,15 @@ def _resolve_with_socket(host: str, port: str) -> List[str]:
 
 
 def resolve_upstreams(
-    upstreams: Dict[str, List[str]]
+    upstreams: Dict[str, List[str]],
+    max_workers: int = 10
 ) -> Dict[str, List[dict]]:
     """
     Резолвит DNS имена upstream-серверов в IP-адреса.
+    
+    Args:
+        upstreams: Словарь upstream серверов
+        max_workers: Максимальное количество потоков для параллельной обработки
     
     Возвращает:
     {
@@ -200,27 +206,71 @@ def resolve_upstreams(
         ]
     }
     """
-    results = {}
+    # Собираем все задачи для параллельной обработки
+    tasks = []
+    task_to_key = {}
+    
     for name, servers in upstreams.items():
-        results[name] = []
-        for srv in servers:
-            resolved = resolve_address(srv)
-            results[name].append({
-                "address": srv,
-                "resolved": resolved
-            })
+        for idx, srv in enumerate(servers):
+            key = (name, idx, srv)
+            tasks.append((key, srv))
+            task_to_key[key] = (name, idx)
+    
+    results = {}
+    for name in upstreams.keys():
+        results[name] = [None] * len(upstreams[name])
+    
+    # Если нет задач, возвращаем пустой результат
+    if not tasks:
+        return results
+    
+    # Параллельная обработка резолвинга
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_key = {executor.submit(resolve_address, srv): key for key, srv in tasks}
+        
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            name, idx = task_to_key[key]
+            try:
+                resolved = future.result()
+                results[name][idx] = {
+                    "address": key[2],
+                    "resolved": resolved
+                }
+            except Exception:
+                results[name][idx] = {
+                    "address": key[2],
+                    "resolved": []
+                }
+    
     return results
+
+
+def _check_single_upstream(srv: str, timeout: float, retries: int, mode: str) -> Tuple[str, bool]:
+    """Вспомогательная функция для проверки одного upstream сервера."""
+    if mode.lower() == "http":
+        healthy = check_http(srv, timeout, retries)
+    else:
+        healthy = check_tcp(srv, timeout, retries)
+    return (srv, healthy)
 
 
 def check_upstreams(
     upstreams: Dict[str, List[str]],
     timeout: float = 2.0,
     retries: int = 1,
-    mode: str = "tcp"
+    mode: str = "tcp",
+    max_workers: int = 10
 ) -> Dict[str, List[dict]]:
     """
     Проверяет доступность upstream-серверов.
-    mode: "tcp" (по умолчанию) или "http"
+    
+    Args:
+        upstreams: Словарь upstream серверов
+        timeout: Таймаут проверки (сек)
+        retries: Количество попыток
+        mode: "tcp" (по умолчанию) или "http"
+        max_workers: Максимальное количество потоков для параллельной обработки
     
     Возвращает:
     {
@@ -230,13 +280,38 @@ def check_upstreams(
         ]
     }
     """
-    results = {}
+    # Собираем все задачи для параллельной обработки
+    tasks = []
+    task_to_key = {}
+    
     for name, servers in upstreams.items():
-        results[name] = []
-        for srv in servers:
-            if mode.lower() == "http":
-                healthy = check_http(srv, timeout, retries)
-            else:
-                healthy = check_tcp(srv, timeout, retries)
-            results[name].append({"address": srv, "healthy": healthy})
+        for idx, srv in enumerate(servers):
+            key = (name, idx, srv)
+            tasks.append((key, srv))
+            task_to_key[key] = (name, idx)
+    
+    results = {}
+    for name in upstreams.keys():
+        results[name] = [None] * len(upstreams[name])
+    
+    # Если нет задач, возвращаем пустой результат
+    if not tasks:
+        return results
+    
+    # Параллельная обработка проверок
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_key = {
+            executor.submit(_check_single_upstream, srv, timeout, retries, mode): key 
+            for key, srv in tasks
+        }
+        
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            name, idx = task_to_key[key]
+            try:
+                srv, healthy = future.result()
+                results[name][idx] = {"address": srv, "healthy": healthy}
+            except Exception:
+                results[name][idx] = {"address": key[2], "healthy": False}
+    
     return results
