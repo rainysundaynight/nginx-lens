@@ -1,13 +1,32 @@
 import os
 import glob
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import re
 
 class NginxConfigTree:
     def __init__(self, directives=None, upstreams=None):
         self.directives = directives or []
         self._upstreams = upstreams or {}
+        self._dynamic_upstream_enabled = False
+        self._dynamic_upstream_api_url = None
+        self._dynamic_upstream_timeout = 2.0
+    
+    def set_dynamic_upstream_config(self, enabled: bool, api_url: Optional[str] = None, timeout: float = 2.0):
+        """Настраивает интеграцию с dynamic upstream API."""
+        self._dynamic_upstream_enabled = enabled
+        self._dynamic_upstream_api_url = api_url
+        self._dynamic_upstream_timeout = timeout
+    
     def get_upstreams(self) -> Dict[str, List[str]]:
+        """Получает upstream серверы, обогащенные динамическими серверами через API."""
+        if self._dynamic_upstream_enabled and self._dynamic_upstream_api_url:
+            from utils.dynamic_upstream import enrich_upstreams_with_dynamic
+            return enrich_upstreams_with_dynamic(
+                self._upstreams,
+                self._dynamic_upstream_api_url,
+                self._dynamic_upstream_timeout,
+                self._dynamic_upstream_enabled
+            )
         return self._upstreams
 
 # --- Вспомогательные функции ---

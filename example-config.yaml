@@ -24,3 +24,8 @@ validate:
   check_upstream: true  # Проверять доступность upstream
   check_dns: false      # Проверять DNS резолвинг upstream (по умолчанию выключено)
   nginx_path: nginx     # Путь к бинарю nginx
+
+dynamic_upstream:
+  enabled: false        # Включить интеграцию с ngx_dynamic_upstream (по умолчанию выключено)
+  api_url: http://127.0.0.1:6000/dynamic  # URL endpoint модуля ngx_dynamic_upstream
+  timeout: 2.0          # Таймаут HTTP запросов к API (сек)

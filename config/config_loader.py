@@ -111,6 +111,11 @@ class ConfigLoader:
                 "check_upstream": True,
                 "check_dns": False,
                 "nginx_path": "nginx",
+            },
+            "dynamic_upstream": {
+                "enabled": False,  # По умолчанию отключено
+                "api_url": "http://127.0.0.1:6000/dynamic",  # URL endpoint модуля
+                "timeout": 2.0,  # Таймаут HTTP запросов
             }
         }
     
@@ -184,6 +189,15 @@ class ConfigLoader:
             Словарь с настройками validate
         """
         return self.config.get("validate", {})
+    
+    def get_dynamic_upstream_config(self) -> Dict[str, Any]:
+        """
+        Получает настройки интеграции с ngx_dynamic_upstream.
+        
+        Returns:
+            Словарь с настройками dynamic_upstream
+        """
+        return self.config.get("dynamic_upstream", {})
     
     def get_nginx_config_path(self) -> Optional[str]:
         """

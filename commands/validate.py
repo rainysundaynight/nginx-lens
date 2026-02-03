@@ -95,6 +95,7 @@ def validate(
     defaults = config.get_defaults()
     cache_config = config.get_cache_config()
     validate_config = config.get_validate_config()
+    dynamic_upstream_config = config.get_dynamic_upstream_config()
     
     # Определяем путь к конфигу
     if not config_path:
@@ -119,6 +120,13 @@ def validate(
     # Управление кэшем
     enable_cache()
     
+    # Функция для настройки dynamic upstream в tree
+    def setup_dynamic_upstream(tree_instance):
+        dynamic_enabled = dynamic_upstream_config.get("enabled", False)
+        dynamic_api_url = dynamic_upstream_config.get("api_url")
+        dynamic_timeout = dynamic_upstream_config.get("timeout", 2.0)
+        tree_instance.set_dynamic_upstream_config(dynamic_enabled, dynamic_api_url, dynamic_timeout)
+    
     # 1. Проверка синтаксиса
     if check_syntax_val:
         console.print(Panel("[bold blue]1. Проверка синтаксиса[/bold blue]", box=box.ROUNDED))
@@ -140,6 +148,7 @@ def validate(
         console.print(Panel("[bold blue]2. Анализ проблем и best practices[/bold blue]", box=box.ROUNDED))
         try:
             tree = parse_nginx_config(config_path)
+            setup_dynamic_upstream(tree)
         except FileNotFoundError:
             console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
             sys.exit(1)
@@ -286,6 +295,7 @@ def validate(
         if tree is None:
             try:
                 tree = parse_nginx_config(config_path)
+                setup_dynamic_upstream(tree)
             except FileNotFoundError:
                 console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
                 sys.exit(1)
@@ -332,18 +342,19 @@ def validate(
         else:
             console.print("[yellow]⚠ Upstream серверы не найдены[/yellow]")
     
-    # 4. Проверка DNS резолвинга
-    if check_dns_val:
-        console.print(Panel("[bold blue]4. Проверка DNS резолвинга upstream[/bold blue]", box=box.ROUNDED))
-        if tree is None:
-            try:
-                tree = parse_nginx_config(config_path)
-            except FileNotFoundError:
-                console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
-                sys.exit(1)
-            except Exception as e:
-                console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
-                sys.exit(1)
+        # 4. Проверка DNS резолвинга
+        if check_dns_val:
+            console.print(Panel("[bold blue]4. Проверка DNS резолвинга upstream[/bold blue]", box=box.ROUNDED))
+            if tree is None:
+                try:
+                    tree = parse_nginx_config(config_path)
+                    setup_dynamic_upstream(tree)
+                except FileNotFoundError:
+                    console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
+                    sys.exit(1)
+                except Exception as e:
+                    console.print(f"[red]Ошибка при разборе {config_path}: {e}[/red]")
+                    sys.exit(1)
         
         upstreams = tree.get_upstreams()
         if upstreams:

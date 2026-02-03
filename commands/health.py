@@ -44,6 +44,7 @@ def health(
     config = get_config()
     defaults = config.get_defaults()
     cache_config = config.get_cache_config()
+    dynamic_upstream_config = config.get_dynamic_upstream_config()
     
     # Определяем путь к конфигу
     if not config_path:
@@ -69,6 +70,12 @@ def health(
     
     try:
         tree = parse_nginx_config(config_path)
+        
+        # Настраиваем интеграцию с dynamic upstream
+        dynamic_enabled = dynamic_upstream_config.get("enabled", False)
+        dynamic_api_url = dynamic_upstream_config.get("api_url")
+        dynamic_timeout = dynamic_upstream_config.get("timeout", 2.0)
+        tree.set_dynamic_upstream_config(dynamic_enabled, dynamic_api_url, dynamic_timeout)
     except FileNotFoundError:
         console.print(f"[red]Файл {config_path} не найден. Проверьте путь к конфигу.[/red]")
         sys.exit(1)
