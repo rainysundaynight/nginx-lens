@@ -1,31 +1,19 @@
 """
-Хуки для автоматической установки автодополнения при установке пакета.
-Импортирует функции из utils.init_helpers для использования при установке.
+Вспомогательные функции для инициализации nginx-lens.
+Используются как при установке пакета, так и при выполнении команды init.
 """
-# Импортируем функции из utils.init_helpers
-# Если модуль еще не установлен (при сборке), используем локальные функции
+import os
+import sys
+from pathlib import Path
+from typing import Optional, Tuple
+
 try:
-    from utils.init_helpers import (
-        detect_shell,
-        get_completion_script,
-        install_completion,
-        create_default_config,
-        post_install
-    )
+    import yaml
 except ImportError:
-    # Fallback для случая когда пакет еще не установлен (при сборке)
-    # Используем локальные функции (старый код для совместимости)
-    import os
-    import sys
-    from pathlib import Path
-    from typing import Optional, Tuple
+    yaml = None
 
-    try:
-        import yaml
-    except ImportError:
-        yaml = None
 
-    def detect_shell() -> Optional[str]:
+def detect_shell() -> Optional[str]:
     """
     Определяет текущий shell пользователя.
     
@@ -74,7 +62,7 @@ def get_completion_script(shell: str) -> str:
     """
     commands = [
         "health", "analyze", "tree", "diff", "route", "include",
-        "graph", "logs", "syntax", "resolve", "validate", "metrics"
+        "graph", "logs", "syntax", "resolve", "validate", "metrics", "init"
     ]
     
     if shell == "bash":
@@ -235,13 +223,13 @@ def install_completion(shell: str, dry_run: bool = False) -> bool:
     return False
 
 
-    def create_default_config() -> Tuple[bool, Optional[str]]:
-        """
-        Создает директорию /opt/nginx-lens и дефолтный конфиг.
-        
-        Returns:
-            Tuple[bool, Optional[str]]: (успешно ли, сообщение об ошибке или None)
-        """
+def create_default_config() -> Tuple[bool, Optional[str]]:
+    """
+    Создает директорию /opt/nginx-lens и дефолтный конфиг.
+    
+    Returns:
+        Tuple[bool, Optional[str]]: (успешно ли, сообщение об ошибке или None)
+    """
     if yaml is None:
         return False, "PyYAML не установлен"
     
@@ -324,7 +312,7 @@ def post_install():
             print(f"⚠ Не удалось создать конфиг в /opt/nginx-lens: {error_msg}", file=sys.stderr)
             print("  Для создания конфига выполните:", file=sys.stderr)
             print("    sudo mkdir -p /opt/nginx-lens", file=sys.stderr)
-            print("    sudo nginx-lens completion show-instructions", file=sys.stderr)
+            print("    sudo nginx-lens init", file=sys.stderr)
             print("  Или создайте конфиг вручную в ~/.nginx-lens/config.yaml", file=sys.stderr)
     except Exception as e:
         print(f"⚠ Ошибка при создании конфига: {e}", file=sys.stderr)
