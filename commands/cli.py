@@ -27,6 +27,30 @@ from commands.config_cmd import app as config_app
 app = typer.Typer(help="nginx-lens — анализ и диагностика конфигураций Nginx")
 console = Console()
 
+
+@app.callback()
+def _main(
+    _ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Показать версию пакета и выйти",
+        is_flag=True,
+        is_eager=True,
+    ),
+) -> None:
+    """Опции верхнего уровня (перед именем подкоманды)."""
+    if not version:
+        return
+    from utils.version import get_version
+    import sys
+
+    # stdout, без rich — удобно для скриптов и | grep
+    print(f"nginx-lens {get_version()}", file=sys.stdout)
+    raise typer.Exit(0)
+
+
 app.command()(health)
 app.command()(analyze)
 app.command()(tree)
