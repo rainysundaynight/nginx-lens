@@ -1,4 +1,5 @@
 import os
+import sys
 
 # Цвета из конфига: до импорта Rich в командах
 from config.config_loader import get_config
@@ -24,31 +25,28 @@ from commands.completion import app as completion_app
 from commands.init import init
 from commands.config_cmd import app as config_app
 
-app = typer.Typer(help="nginx-lens — анализ и диагностика конфигураций Nginx")
+app = typer.Typer(
+    help="nginx-lens — анализ и диагностика конфигураций Nginx",
+    # иначе Typer требует подкоманду и не принимает только глобальные флаги на группе
+    invoke_without_command=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 console = Console()
 
 
-@app.callback()
-def _main(
-    _ctx: typer.Context,
-    version: bool = typer.Option(
-        False,
-        "--version",
-        "-V",
-        help="Показать версию пакета и выйти",
-        is_flag=True,
-        is_eager=True,
-    ),
-) -> None:
-    """Опции верхнего уровня (перед именем подкоманды)."""
-    if not version:
-        return
-    from utils.version import get_version
-    import sys
+def main() -> None:
+    """
+    Точка входа консольного скрипта. Обрабатываем --version/-V до Typer, иначе Click
+    оставляет 'Missing command' у группы с subcommands.
+    """
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-V"):
+        from utils.version import get_version
 
-    # stdout, без rich — удобно для скриптов и | grep
-    print(f"nginx-lens {get_version()}", file=sys.stdout)
-    raise typer.Exit(0)
+        print(f"nginx-lens {get_version()}", file=sys.stdout)
+        raise SystemExit(0)
+    if len(sys.argv) == 1:
+        sys.argv.append("--help")
+    app()
 
 
 app.command()(health)
@@ -68,4 +66,4 @@ app.add_typer(completion_app, name="completion", help="Генерация скр
 app.add_typer(config_app, name="config", help="Показать загруженный конфиг (файл, ключевые поля, --full для YAML)")
 
 if __name__ == "__main__":
-    app() 
+    main()

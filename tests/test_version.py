@@ -1,19 +1,31 @@
-from typer.testing import CliRunner
+import sys
 
-from commands.cli import app
+import pytest
 
-runner = CliRunner()
+from commands.cli import main
 
 
-def test_version_flag_exits_zero_and_prints_name():
-    r = runner.invoke(app, ["--version"])
-    assert r.exit_code == 0
-    out = (r.output or r.stdout or "").lower()
+def test_version_prints_and_exits_0(capsys):
+    old = sys.argv
+    try:
+        sys.argv = ["nginx-lens", "--version"]
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+    finally:
+        sys.argv = old
+    out = capsys.readouterr().out
     assert "nginx-lens" in out
-    assert "0.7.1" in out or "0.7" in out  # fallback или metadata
+    assert "0.8" in out
 
 
-def test_version_short_v():
-    r = runner.invoke(app, ["-V"])
-    assert r.exit_code == 0
-    assert "nginx-lens" in (r.output or r.stdout or "")
+def test_version_short_v(capsys):
+    old = sys.argv
+    try:
+        sys.argv = ["nginx-lens", "-V"]
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+    finally:
+        sys.argv = old
+    assert "nginx-lens" in capsys.readouterr().out
