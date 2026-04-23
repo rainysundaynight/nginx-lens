@@ -1,18 +1,22 @@
 # Пример конфигурационного файла для nginx-lens
 # Разместите этот файл в ~/.nginx-lens/config.yaml или .nginx-lens.yaml
 
+# Можно задать явный путь: export NGINX_LENS_CONFIG=~/work/nginx-lens.yaml
 defaults:
   timeout: 3.0          # Таймаут проверки upstream (сек)
   retries: 2            # Количество попыток
   mode: tcp             # Режим проверки: tcp или http
   max_workers: 20       # Максимальное количество потоков для параллельной обработки
   dns_cache_ttl: 300    # Время жизни DNS кэша (сек)
-  top: 10                # Количество топ-значений для команды logs
+  top: 10                # Дефолт для logs --top (если не передать в CLI)
   nginx_config_path: /etc/nginx/nginx.conf  # Путь к nginx.conf (по умолчанию /etc/nginx/nginx.conf, если файл не существует - используется автопоиск)
 
 output:
-  colors: true          # Использовать цвета в выводе
-  format: table         # Формат вывода: table, json, yaml
+  colors: true          # Цвета в терминале (вкл. Rich); при false задаётся NO_COLOR
+  format: table         # Соглашение для экспорта (table, json, yaml) — в развитие
+
+logs:
+  detect_anomalies: false  # Включать ли --detect-anomalies в logs по умолчанию; в CLI: --no-detect-anomalies
 
 cache:
   enabled: true         # Включить DNS кэширование

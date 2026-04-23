@@ -62,7 +62,7 @@ def get_completion_script(shell: str) -> str:
     """
     commands = [
         "health", "analyze", "tree", "diff", "route", "include",
-        "graph", "logs", "syntax", "resolve", "validate", "metrics", "init"
+        "graph", "logs", "syntax", "resolve", "validate", "metrics", "config", "init"
     ]
     
     if shell == "bash":
@@ -266,7 +266,10 @@ def create_default_config() -> Tuple[bool, Optional[str]]:
             "enabled": False,  # По умолчанию отключено
             "api_url": "http://127.0.0.1:6000/dynamic",  # URL endpoint модуля
             "timeout": 2.0,  # Таймаут HTTP запросов
-        }
+        },
+        "logs": {
+            "detect_anomalies": False,
+        },
     }
     
     try:

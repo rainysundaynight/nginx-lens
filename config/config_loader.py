@@ -2,9 +2,13 @@
 Модуль для загрузки и управления конфигурационным файлом nginx-lens.
 """
 import os
+import copy
 import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+# Путь к YAML: export NGINX_LENS_CONFIG=/path/to/config.yaml
+ENV_CONFIG = "NGINX_LENS_CONFIG"
 
 
 def _find_default_nginx_config() -> Optional[str]:
@@ -43,6 +47,11 @@ class ConfigLoader:
         Returns:
             Path к конфигурационному файлу или None
         """
+        env_path = os.environ.get(ENV_CONFIG)
+        if env_path:
+            p = Path(os.path.expanduser(env_path))
+            if p.is_file():
+                return p
         # Список возможных путей к конфигу (в порядке приоритета)
         possible_paths = [
             Path.cwd() / ".nginx-lens.yaml",  # Текущая директория
@@ -116,7 +125,10 @@ class ConfigLoader:
                 "enabled": False,  # По умолчанию отключено
                 "api_url": "http://127.0.0.1:6000/dynamic",  # URL endpoint модуля
                 "timeout": 2.0,  # Таймаут HTTP запросов
-            }
+            },
+            "logs": {
+                "detect_anomalies": False,
+            },
         }
     
     def _merge_config(self, default: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,6 +210,14 @@ class ConfigLoader:
             Словарь с настройками dynamic_upstream
         """
         return self.config.get("dynamic_upstream", {})
+
+    def get_logs_config(self) -> Dict[str, Any]:
+        """Настройки команды logs (аномалии и т.д.)."""
+        return self.config.get("logs", {})
+
+    def get_merged_dict(self) -> Dict[str, Any]:
+        """Полная объединённая конфигурация (копия)."""
+        return copy.deepcopy(self.config)
     
     def get_nginx_config_path(self) -> Optional[str]:
         """

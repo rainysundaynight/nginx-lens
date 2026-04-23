@@ -1,26 +1,129 @@
+import os
 import sys
 from typing import Optional, List, Dict, Any
 import typer
-from rich.console import Console
-from rich.table import Table
-import re
 import gzip
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
+
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from exporter.json_yaml import format_logs_results, print_export
 from exporter.csv import export_logs_to_csv
 from config.config_loader import get_config
+from utils.log_parsers import parse_universal_log_line
 
-app = typer.Typer(help="Анализ access.log/error.log: топ-статусы, пути, IP, User-Agent, ошибки.")
+_LOGS_DEFAULT_DETECT = get_config().get_logs_config().get("detect_anomalies", False)
+
+app = typer.Typer(
+    help="Анализ access-логов: nginx, JSON, LTSV и нестрогий текст — подгоняется к файлу сам, без настроек.",
+)
 console = Console()
 
-# Улучшенный regex для парсинга nginx access log (поддерживает response time)
-# Формат: IP - - [timestamp] "method path protocol" status size "referer" "user-agent" "response_time"
-log_line_re = re.compile(
-    r'(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) [^\"]+" '
-    r'(?P<status>\d{3}) (?P<size>\S+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"'
-    r'(?: "(?P<response_time>[^"]+)")?'
-)
+# --- оформление вывода ---------------------------------------------------------
+
+_RT_LABELS = {
+    "min": "Минимум",
+    "max": "Максимум",
+    "avg": "Среднее",
+    "median": "Медиана",
+    "p95": "p95",
+    "p99": "p99",
+    "total_requests_with_time": "Запросов с таймингом",
+}
+
+_ANOMALY_TYPE_RU = {
+    "error_spike": "Всплеск ошибок",
+    "slow_requests": "Медленные ответы",
+    "suspicious_ips": "Активные IP",
+    "unusual_paths": "Частые пути",
+}
+
+_SEVER_RU = {"high": "высокая", "medium": "средняя", "low": "низкая"}
+
+
+def _http_status_badge(status: str) -> str:
+    if not (status and status.isdigit() and len(status) == 3):
+        return f"[dim]{status}[/dim]"
+    c = {2: "green", 3: "cyan", 4: "yellow", 5: "red"}.get(int(status[0]), "white")
+    return f"[bold {c}]{status}[/bold {c}]"
+
+
+def _ellipsize(s: str, max_len: int = 96) -> str:
+    s = s.replace("\n", " ")
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
+def _short_path_display(path: str, max_len: int = 88) -> str:
+    if len(path) <= max_len:
+        return path
+    a = max_len // 2 - 2
+    b = max_len - a - 1
+    return f"{path[:a]}…{path[-b:]}"
+
+
+def _build_summary_panel(
+    log_path: str,
+    n: int,
+    err_n: int,
+    since: Optional[str],
+    until: Optional[str],
+    status: Optional[str],
+) -> Panel:
+    abs_path = os.path.abspath(os.path.expanduser(log_path))
+    path_show = _ellipsize(abs_path, 90)
+    err_pct = (100.0 * err_n / n) if n else 0.0
+    line1 = f"[bold]Файл[/bold]  [dim]{path_show}[/dim]"
+    if log_path.endswith(".gz"):
+        line1 += "  [dim](gzip)[/dim]"
+    line2 = (
+        f"Запросов: [green bold]{n:,}[/green bold]  [dim]·[/dim]  "
+        f"4xx/5xx: [yellow bold]{err_n:,}[/yellow bold]  [dim]({err_pct:.1f} %)[/dim]"
+    )
+    rest: list[str] = []
+    if since or until or status:
+        bits = []
+        if since:
+            bits.append(f"с {since}")
+        if until:
+            bits.append(f"до {until}")
+        if status:
+            bits.append(f"статусы: {status}")
+        rest.append(f"[dim]Фильтр:[/dim]  {', '.join(bits)}")
+    content = "\n".join([line1, line2] + rest)
+    return Panel(
+        content,
+        title="[bold]nginx-lens — сводка по логу[/bold]",
+        title_align="left",
+        box=box.ROUNDED,
+        border_style="bright_blue",
+        padding=(1, 2),
+    )
+
+
+def _data_table_title(text: str) -> str:
+    return f"[bold white]{text}[/bold white]"
+
+
+def _new_table(
+    title: str, *, with_lines: bool = True, border: str = "bright_black"
+) -> Table:
+    return Table(
+        title=_data_table_title(title),
+        show_header=True,
+        header_style="bold cyan",
+        box=box.ROUNDED,
+        border_style=border,
+        show_lines=with_lines,
+        padding=(0, 1),
+        title_justify="left",
+    )
+
 
 def logs(
     log_path: str = typer.Argument(..., help="Путь к access.log или error.log"),
@@ -31,7 +134,11 @@ def logs(
     since: Optional[str] = typer.Option(None, "--since", help="Фильтр: с даты (формат: YYYY-MM-DD или YYYY-MM-DD HH:MM:SS)"),
     until: Optional[str] = typer.Option(None, "--until", help="Фильтр: до даты (формат: YYYY-MM-DD или YYYY-MM-DD HH:MM:SS)"),
     status: Optional[str] = typer.Option(None, "--status", help="Фильтр по статусам (например: 404,500)"),
-    detect_anomalies: bool = typer.Option(False, "--detect-anomalies", help="Обнаруживать аномалии в логах"),
+    detect_anomalies: bool = typer.Option(
+        _LOGS_DEFAULT_DETECT,
+        "--detect-anomalies/--no-detect-anomalies",
+        help="Поиск аномалий (по умолчанию: из конфига [logs.detect_anomalies])",
+    ),
 ):
     """
     Анализирует access.log/error.log.
@@ -47,8 +154,7 @@ def logs(
 
     Пример:
         nginx-lens logs /var/log/nginx/access.log --top 20
-        nginx-lens logs /var/log/nginx/access.log --since "2024-01-01" --status 404,500
-        nginx-lens logs /var/log/nginx/access.log.gz --detect-anomalies --json
+        nginx-lens logs /path/to/anything.log
     """
     # Загружаем конфигурацию
     config = get_config()
@@ -84,18 +190,16 @@ def logs(
             console.print(f"[red]Неверный формат даты для --until: {until}. Используйте YYYY-MM-DD или YYYY-MM-DD HH:MM:SS[/red]")
             sys.exit(1)
     
-    # Чтение лога (поддержка gzip)
+    # Чтение лога построчно (поддержка gzip, без загрузки всего файла в память)
     try:
-        if log_path.endswith('.gz'):
-            with gzip.open(log_path, 'rt', encoding='utf-8', errors='ignore') as f:
-                lines = list(f)
+        if log_path.endswith(".gz"):
+            _log = gzip.open(log_path, "rt", encoding="utf-8", errors="ignore")
         else:
-            with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = list(f)
+            _log = open(log_path, "r", encoding="utf-8", errors="ignore")
     except FileNotFoundError:
         console.print(f"[red]Файл {log_path} не найден. Проверьте путь к логу.[/red]")
         sys.exit(1)
-    except Exception as e:
+    except OSError as e:
         console.print(f"[red]Ошибка при чтении {log_path}: {e}[/red]")
         sys.exit(1)
     status_counter = Counter()
@@ -105,85 +209,86 @@ def logs(
     errors = defaultdict(list)
     response_times = []
     log_entries = []
-    
-    # Парсинг nginx формата времени: 01/Jan/2024:00:00:00 +0000
-    nginx_time_format = "%d/%b/%Y:%H:%M:%S %z"
-    
-    for line in lines:
-        m = log_line_re.search(line)
-        if m:
-            try:
-                # Парсинг времени
-                time_str = m.group('time')
-                log_time = datetime.strptime(time_str, nginx_time_format)
-                
-                # Убираем timezone для сравнения (приводим к naive datetime)
-                if log_time.tzinfo:
-                    log_time = log_time.replace(tzinfo=None)
-                
-                # Фильтрация по времени
-                if since_dt and log_time < since_dt:
-                    continue
-                if until_dt and log_time > until_dt:
-                    continue
-                
-                ip = m.group('ip')
-                path = m.group('path')
-                status = m.group('status')
-                method = m.group('method')
-                user_agent = m.group('user_agent') or ''
-                response_time_str = m.group('response_time')
-                
-                # Фильтрация по статусам
-                if status_filter and status not in status_filter:
-                    continue
-                
-                # Сбор данных
-                entry = {
-                    'time': log_time,
-                    'ip': ip,
-                    'path': path,
-                    'status': status,
-                    'method': method,
-                    'user_agent': user_agent,
-                    'response_time': float(response_time_str) if response_time_str else None
-                }
-                log_entries.append(entry)
-                
-                status_counter[status] += 1
-                path_counter[path] += 1
-                ip_counter[ip] += 1
-                
-                if user_agent:
-                    user_agent_counter[user_agent] += 1
-                
-                if status.startswith('4') or status.startswith('5'):
-                    errors[status].append(path)
-                
-                if response_time_str:
-                    try:
-                        response_times.append(float(response_time_str))
-                    except ValueError:
-                        pass
-            except (ValueError, AttributeError) as e:
-                # Пропускаем строки с неверным форматом
+
+    with _log:
+        for line in _log:
+            pl = parse_universal_log_line(line)
+            if pl is None:
                 continue
+            log_time = pl.time
+            if (since_dt or until_dt) and log_time is None:
+                continue
+            try:
+                if since_dt and log_time is not None and log_time < since_dt:
+                    continue
+                if until_dt and log_time is not None and log_time > until_dt:
+                    continue
+            except TypeError:
+                continue
+
+            status = pl.status
+            path = pl.path
+            ip = pl.ip
+            method = pl.method
+            user_agent = pl.user_agent
+            if status_filter and status not in status_filter:
+                continue
+
+            entry = {
+                "time": log_time,
+                "ip": ip,
+                "path": path,
+                "status": status,
+                "method": method,
+                "user_agent": user_agent,
+                "response_time": pl.response_time,
+            }
+            log_entries.append(entry)
+
+            status_counter[status] += 1
+            path_counter[path] += 1
+            ip_counter[ip] += 1
+            if user_agent:
+                user_agent_counter[user_agent] += 1
+            if status.startswith("4") or status.startswith("5"):
+                errors[status].append(path)
+            if pl.response_time is not None:
+                response_times.append(pl.response_time)
     
     # Проверка на пустые результаты
     if not log_entries:
+        filters_on = bool(since_dt or until_dt or status_filter)
+        empty_msg = (
+            "Нет записей после применения фильтров (дата и/или статусы). "
+            "Строки без распознаваемой даты пропускаются при --since/--until."
+            if filters_on
+            else (
+                "Не удалось выделить HTTP-запросы из файла. Нужны строки с путём и кодом ответа "
+                "(как в access.log), иначе это может быть error.log, аудит в другом формате или пустой файл."
+            )
+        )
         if json or yaml or csv:
             empty_data = {
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
                 "summary": {"total_requests": 0},
-                "message": "Нет записей, соответствующих фильтрам"
+                "message": empty_msg,
             }
             if csv:
-                print("Category,Type,Value,Count\nNo Data,,,,No entries match filters")
+                print("Category,Type,Value,Count\nNo Data,,,,0")
             else:
                 format_type = 'json' if json else 'yaml'
                 print_export(empty_data, format_type)
         else:
-            console.print("[yellow]Нет записей, соответствующих указанным фильтрам.[/yellow]")
+            console.print(
+                Panel(
+                    f"[yellow]{empty_msg}[/yellow]",
+                    title="[bold]Нет данных[/bold]",
+                    box=box.ROUNDED,
+                    border_style="yellow",
+                    title_align="left",
+                    padding=(1, 2),
+                )
+            )
         return
     
     # Анализ времени ответа
@@ -276,70 +381,89 @@ def logs(
         format_type = 'json' if json else 'yaml'
         print_export(export_data, format_type)
         return
-    
-    # Показываем статистику по времени ответа
+
+    n = len(log_entries)
+    err_n = sum(1 for e in log_entries if e["status"].startswith("4") or e["status"].startswith("5"))
+    parts: list = [
+        _build_summary_panel(
+            log_path, n, err_n, since, until, status,
+        )
+    ]
     if response_time_stats:
-        table = Table(title="Response Time Statistics", show_header=True, header_style="bold green")
-        table.add_column("Metric")
-        table.add_column("Value")
+        t_rt = _new_table("Время ответа (сервер/прокси)", with_lines=True)
+        t_rt.add_column("Метрика", style="dim", no_wrap=True)
+        t_rt.add_column("Значение", justify="right", style="green")
         for metric, value in response_time_stats.items():
-            if metric != "total_requests_with_time":
-                table.add_row(metric.replace("_", " ").title(), f"{value:.3f}s")
+            label = _RT_LABELS.get(metric, metric.replace("_", " ").title())
+            if metric == "total_requests_with_time":
+                t_rt.add_row(label, f"[white]{int(value):,}[/white]")
             else:
-                table.add_row(metric.replace("_", " ").title(), str(int(value)))
-        console.print(table)
-    
-    # Показываем аномалии
+                t_rt.add_row(label, f"{value:.3f} [dim]s[/dim]")
+        parts.append(t_rt)
     if anomalies:
-        table = Table(title="Detected Anomalies", show_header=True, header_style="bold red")
-        table.add_column("Type")
-        table.add_column("Description")
-        table.add_column("Severity")
-        for anomaly in anomalies:
-            severity_color = {"high": "red", "medium": "orange3", "low": "yellow"}.get(anomaly.get("severity", "low"), "white")
-            table.add_row(
-                anomaly.get("type", ""),
-                anomaly.get("description", ""),
-                f"[{severity_color}]{anomaly.get('severity', '')}[/{severity_color}]"
+        t_an = _new_table("Аномалии", with_lines=True, border="red")
+        t_an.add_column("Тип", width=20, no_wrap=True)
+        t_an.add_column("Описание", ratio=1)
+        t_an.add_column("Серьёзность", justify="right", width=12, no_wrap=True)
+        for a in anomalies:
+            typ = a.get("type", "")
+            typ_d = _ANOMALY_TYPE_RU.get(typ, typ)
+            sev = a.get("severity", "low")
+            sc = {"high": "red", "medium": "orange1", "low": "yellow"}.get(sev, "white")
+            sev_ru = _SEVER_RU.get(sev, sev)
+            t_an.add_row(
+                typ_d,
+                a.get("description", ""),
+                f"[{sc}]{sev_ru}[/]",
             )
-        console.print(table)
-    
-    # Топ статусов
-    table = Table(title="Top HTTP Status Codes", show_header=True, header_style="bold blue")
-    table.add_column("Status")
-    table.add_column("Count")
-    for status, count in status_counter.most_common(top):
-        table.add_row(status, str(count))
-    console.print(table)
-    # Топ путей
-    table = Table(title="Top Paths", show_header=True, header_style="bold blue")
-    table.add_column("Path")
-    table.add_column("Count")
-    for path, count in path_counter.most_common(top):
-        table.add_row(path, str(count))
-    console.print(table)
-    # Топ IP
-    table = Table(title="Top IPs", show_header=True, header_style="bold blue")
-    table.add_column("IP")
-    table.add_column("Count")
+        parts.append(t_an)
+    t_st = _new_table("Статусы HTTP")
+    t_st.add_column("Код", style="white", no_wrap=True)
+    t_st.add_column("Счётчик", justify="right", style="bold")
+    t_st.add_column("Доля", justify="right", style="dim")
+    for st, count in status_counter.most_common(top):
+        p = 100.0 * count / n
+        t_st.add_row(_http_status_badge(st), f"{count:,}", f"{p:.1f} %")
+    parts.append(t_st)
+    t_p = _new_table("Самые частые пути", border="magenta")
+    t_p.add_column("Путь", style="magenta", overflow="fold")
+    t_p.add_column("Счётчик", justify="right", style="bold")
+    t_p.add_column("Доля", justify="right", style="dim")
+    for pth, count in path_counter.most_common(top):
+        p = 100.0 * count / n
+        t_p.add_row(_short_path_display(pth, 100), f"{count:,}", f"{p:.1f} %")
+    parts.append(t_p)
+    t_ip = _new_table("IP-адреса", border="bright_blue")
+    t_ip.add_column("IP", style="bright_blue", no_wrap=True, overflow="ellipsis")
+    t_ip.add_column("Счётчик", justify="right", style="bold")
+    t_ip.add_column("Доля", justify="right", style="dim")
     for ip, count in ip_counter.most_common(top):
-        table.add_row(ip, str(count))
-    console.print(table)
-    # Топ User-Agent
+        p = 100.0 * count / n
+        t_ip.add_row(ip, f"{count:,}", f"{p:.1f} %")
+    parts.append(t_ip)
     if user_agent_counter:
-        table = Table(title="Top User-Agents", show_header=True, header_style="bold blue")
-        table.add_column("User-Agent")
-        table.add_column("Count")
+        t_ua = _new_table("User-Agent", border="white")
+        t_ua.add_column("Клиент", style="white", overflow="fold")
+        t_ua.add_column("Счётчик", justify="right", style="bold")
+        t_ua.add_column("Доля", justify="right", style="dim")
         for ua, count in user_agent_counter.most_common(top):
-            table.add_row(ua, str(count))
-        console.print(table)
-    # Топ 404/500
-    for err in ('404', '500'):
-        if errors[err]:
-            table = Table(title=f"Top {err} Paths", show_header=True, header_style="bold blue")
-            table.add_column("Path")
-            table.add_column("Count")
-            c = Counter(errors[err])
-            for path, count in c.most_common(top):
-                table.add_row(path, str(count))
-            console.print(table) 
+            p = 100.0 * count / n
+            t_ua.add_row(_ellipsize(ua, 100), f"{count:,}", f"{p:.1f} %")
+        parts.append(t_ua)
+    for err in ("404", "500"):
+        if not errors[err]:
+            continue
+        c = Counter(errors[err])
+        t_e = _new_table(f"Пути с {err} — топ", border="yellow")
+        t_e.add_column("Путь", style="yellow", overflow="fold")
+        t_e.add_column("Счётчик", justify="right", style="bold")
+        t_e.add_column("Доля", style="dim", justify="right")
+        err_total = len(errors[err])
+        for pth, count in c.most_common(top):
+            p = 100.0 * count / err_total if err_total else 0
+            t_e.add_row(_short_path_display(pth, 100), f"{count:,}", f"{p:.1f} %")
+        parts.append(t_e)
+    for i, block in enumerate(parts):
+        if i:
+            console.print()
+        console.print(block)
