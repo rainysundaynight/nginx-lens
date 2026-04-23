@@ -24,6 +24,7 @@ from commands.metrics import metrics
 from commands.completion import app as completion_app
 from commands.init import init
 from commands.config_cmd import app as config_app
+from commands.upstreams import upstreams
 
 app = typer.Typer(
     help="nginx-lens — анализ и диагностика конфигураций Nginx",
@@ -62,6 +63,7 @@ app.command()(resolve)
 app.command()(validate)
 app.command()(metrics)
 app.command()(init)
+app.command()(upstreams)
 app.add_typer(completion_app, name="completion", help="Генерация скриптов автодополнения")
 app.add_typer(config_app, name="config", help="Показать загруженный конфиг (файл, ключевые поля, --full для YAML)")
 

@@ -16,7 +16,7 @@ def test_version_prints_and_exits_0(capsys):
         sys.argv = old
     out = capsys.readouterr().out
     assert "nginx-lens" in out
-    assert "0.8" in out
+    assert "0.9" in out
 
 
 def test_version_short_v(capsys):

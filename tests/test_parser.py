@@ -59,4 +59,28 @@ def test_nested_blocks_and_comments():
     ups = tree.get_upstreams()
     assert "u1" in ups
     assert ups["u1"] == ["1.1.1.1:80"]
-    os.unlink(f.name) 
+    os.unlink(f.name)
+
+
+def test_upstream_block_options_preserved():
+    conf = """
+    upstream back {
+        least_conn;
+        keepalive 32;
+        keepalive_timeout 60s;
+        server 127.0.0.1:8080 weight=3 max_fails=2 fail_timeout=20s;
+        server 127.0.0.1:8081 backup;
+    }
+    """
+    with tempfile.NamedTemporaryFile("w+", delete=False) as f:
+        f.write(conf)
+        f.flush()
+        tree = parse_nginx_config(f.name)
+    os.unlink(f.name)
+    ublocks = [d for d in tree.directives if d.get("upstream") == "back"]
+    assert len(ublocks) == 1
+    b = ublocks[0]
+    assert "least_conn" in [o["directive"] for o in b.get("options", [])]
+    assert b.get("options")  # not empty
+    assert any("keepalive" in o["directive"] for o in b["options"])
+    assert b["servers"], "две server-строки"

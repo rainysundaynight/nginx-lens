@@ -23,7 +23,8 @@ def _generate_completion_script(shell: str) -> str:
     """
     commands = [
         "health", "analyze", "tree", "diff", "route", "include",
-        "graph", "logs", "syntax", "resolve", "validate", "metrics", "config"
+        "graph", "logs", "syntax", "resolve", "validate", "metrics", "config",
+        "upstreams",
     ]
     
     if shell == "bash":

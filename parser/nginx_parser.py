@@ -33,6 +33,26 @@ class NginxConfigTree:
 def _strip_comments(line: str) -> str:
     return line.split('#', 1)[0].strip()
 
+
+def _parse_upstream_block_lines(block_lines: List[str]) -> (List[str], List[Dict[str, str]]):
+    """Парсит тело upstream { ... }: server-строки и прочие директивы (hash, keepalive, zone, ...)."""
+    servers: List[str] = []
+    options: List[Dict[str, str]] = []
+    for bl in block_lines:
+        bl = bl.strip()
+        if not bl:
+            continue
+        m_srv = re.match(r"server\s+([^;]+);", bl)
+        if m_srv:
+            servers.append(m_srv.group(1).strip())
+            continue
+        m_dir = re.match(r"(\S+)(?:\s+(.+?))?\s*;", bl)
+        if m_dir:
+            dname, dargs = m_dir.group(1), m_dir.group(2)
+            options.append({"directive": dname, "args": (dargs or "").strip()})
+    return servers, options
+
+
 def _parse_block(lines, base_dir, source_file=None) -> (List[Any], Dict[str, List[str]]):
     directives = []
     upstreams = {}
@@ -69,13 +89,11 @@ def _parse_block(lines, base_dir, source_file=None) -> (List[Any], Dict[str, Lis
                 if depth > 0:
                     block_lines.append(l)
                 i += 1
-            servers = []
-            for bl in block_lines:
-                m_srv = re.match(r'server\s+([^;]+);', bl)
-                if m_srv:
-                    servers.append(m_srv.group(1).strip())
+            servers, options = _parse_upstream_block_lines(block_lines)
             upstreams[name] = servers
-            directives.append({'upstream': name, 'servers': servers, '__file__': source_file})
+            directives.append(
+                {'upstream': name, 'servers': servers, 'options': options, '__file__': source_file}
+            )
             continue
         # Блоки (например, server, http, location)
         m = re.match(r'(\S+)\s*(\S+)?\s*{', line)
