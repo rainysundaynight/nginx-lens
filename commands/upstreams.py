@@ -3,6 +3,7 @@
 """
 
 import json
+import os
 import sys
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,8 @@ from utils.upstream_inspect import (
 
 console = Console()
 
+_OPT_LINE_MAX = 100
+
 
 def _config_path_from_cli(config_path: Optional[str]) -> str:
     if config_path:
@@ -40,6 +43,34 @@ def _config_path_from_cli(config_path: Optional[str]) -> str:
         )
         sys.exit(1)
     return p
+
+
+def _shorten_path(path: str, max_len: int = 44) -> str:
+    if not path or path == "—":
+        return path
+    s = str(path)
+    if len(s) <= max_len:
+        return s
+    base = os.path.basename(s) or s
+    if len(base) <= max_len and "/" in s:
+        return f"…/{base}"
+    return s[: max_len - 1] + "…"
+
+
+def _options_oneline(options: List[Dict[str, str]]) -> str:
+    if not options:
+        return "—"
+    parts: List[str] = []
+    for o in options:
+        d, a = o.get("directive", ""), (o.get("args") or "").strip()
+        if a:
+            parts.append(f"{d} {a}")
+        else:
+            parts.append(d)
+    line = " · ".join(parts)
+    if len(line) > _OPT_LINE_MAX:
+        return line[: _OPT_LINE_MAX - 1] + "…"
+    return line
 
 
 def _build_json(
@@ -75,6 +106,123 @@ def _build_json(
     return {"config": path, "upstreams": out}
 
 
+def _render_table_compact(
+    path: str,
+    blocks: List[Dict[str, Any]],
+    refs: List,
+    names_sorted: List[str],
+) -> None:
+    console.print(
+        f"[dim]Конфиг:[/] [white]{_shorten_path(path, 72)}[/]\n", highlight=False
+    )
+
+    # 1) Один блок = одна строка: сводка
+    t1 = Table(
+        show_header=True,
+        header_style="bold cyan",
+        box=box.SIMPLE,
+        title="[bold]Блоки upstream[/]",
+    )
+    t1.add_column("upstream", style="bold bright_cyan", no_wrap=True)
+    t1.add_column("файл", style="dim", max_width=40)
+    t1.add_column("# srv", justify="right", style="magenta")
+    t1.add_column("параметры группы", style="green", max_width=48)
+    t1.add_column("# ссылок", justify="right", style="yellow")
+
+    for b in blocks:
+        un = b.get("upstream") or "—"
+        fpath = b.get("__file__") or "—"
+        sames = [x for x in blocks if x.get("upstream") == un]
+        n_same = len(sames)
+        if n_same > 1:
+            k = sames.index(b) + 1
+            label = f"{un} [dim]({k}/{n_same})[/]"
+        else:
+            label = un
+        ref_n = len([r for r in refs if r.upstream_name == un])
+        t1.add_row(
+            label,
+            _shorten_path(fpath, 40),
+            str(len(b.get("servers", []))),
+            _options_oneline(b.get("options") or []),
+            str(ref_n),
+        )
+    console.print(t1)
+    console.print()
+
+    # 2) Все бэкенды: плоская таблица
+    t2 = Table(
+        show_header=True,
+        header_style="bold magenta",
+        box=box.SIMPLE,
+        title="[bold]Серверы (внутри upstream)[/]",
+    )
+    t2.add_column("upstream", style="bright_cyan", no_wrap=True)
+    t2.add_column("файл", style="dim", max_width=32)
+    t2.add_column("#", justify="right", style="dim", width=3)
+    t2.add_column("адрес", style="white")
+    t2.add_column("w", style="dim", width=4)
+    t2.add_column("max_f", style="dim", width=5)
+    t2.add_column("B", width=2)
+    t2.add_column("D", width=2)
+    t2.add_column("другое", style="dim", max_width=20)
+
+    for b in blocks:
+        un = b.get("upstream") or "—"
+        fpath = b.get("__file__") or "—"
+        srvs = b.get("servers", [])
+        if not srvs:
+            t2.add_row(
+                un,
+                _shorten_path(fpath, 32),
+                "—",
+                "[dim]—[/]",
+                "—",
+                "—",
+                "—",
+                "—",
+                "—",
+            )
+        else:
+            for i, line in enumerate(srvs, 1):
+                p = parse_server_options(line)
+                t2.add_row(
+                    un,
+                    _shorten_path(fpath, 32),
+                    str(i),
+                    p["address"],
+                    p["weight"],
+                    p["max_fails"],
+                    p["backup"] if p["backup"] != "—" else "—",
+                    p["down"] if p["down"] != "—" else "—",
+                    p["other"] if p["other"] != "—" else "—",
+                )
+    console.print(t2)
+    console.print()
+
+    # 3) Где используется
+    t3 = _refs_table(
+        refs,
+        show_upstream=True,
+        compact_path=True,
+        compact_stream=True,
+        box_style=box.SIMPLE,
+    )
+    t3.title = "[bold]Где используется[/]"
+    if not refs:
+        console.print("[dim]Нет ссылок (proxy_pass / fastcgi_pass / …) на named upstream.[/]\n")
+    else:
+        console.print(t3)
+    console.print()
+
+    n_names = len(names_sorted)
+    n_def = len(blocks)
+    n_ref = len(refs)
+    console.print(
+        f"[dim]Итого: {n_names} имён, {n_def} определений блока, {n_ref} ссылок[/]"
+    )
+
+
 def upstreams(
     config_path: Optional[str] = typer.Argument(
         None,
@@ -91,9 +239,16 @@ def upstreams(
         "--json",
         help="Экспорт в JSON (stdout)",
     ),
+    panels: bool = typer.Option(
+        False,
+        "--panels",
+        help="Панель на каждый upstream (подробно; по умолчанию — компактные таблицы).",
+    ),
 ) -> None:
     """
     Показать named upstream: бэкенды, директивы блока, где используется (server_name, listen, location) и файлы.
+
+    По умолчанию — три компактные таблицы. Флаг [cyan]--panels[/] включает прежний подробный вид с панелями.
     """
     path = _config_path_from_cli(config_path)
     try:
@@ -146,23 +301,25 @@ def upstreams(
         print(json.dumps(data, ensure_ascii=False, indent=2))
         raise typer.Exit(0)
 
-    for uname in names_sorted:
-        udefs = [b for b in blocks if b.get("upstream") == uname]
-        urefs = [r for r in refs if r.upstream_name == uname]
-        for idx, udef in enumerate(udefs):
-            _render_one_upstream(
-                udef, urefs, uname, show_index=idx, total_same=len(udefs)
-            )
-        if not udefs and urefs:
-            _render_missing_upstream(uname, urefs)
-
-    n_total = len(names_sorted)
-    console.print()
-    t = Text()
-    t.append("Найдено ", style="dim")
-    t.append(f"{n_total} ", style="bold")
-    t.append("имени upstream" if n_total == 1 else "имён upstream", style="dim")
-    console.print(t)
+    if not panels:
+        _render_table_compact(path, blocks, refs, names_sorted)
+    else:
+        for uname in names_sorted:
+            udefs = [b for b in blocks if b.get("upstream") == uname]
+            urefs = [r for r in refs if r.upstream_name == uname]
+            for idx, udef in enumerate(udefs):
+                _render_one_upstream(
+                    udef, urefs, uname, show_index=idx, total_same=len(udefs)
+                )
+            if not udefs and urefs:
+                _render_missing_upstream(uname, urefs)
+        n_total = len(names_sorted)
+        console.print()
+        t = Text()
+        t.append("Найдено ", style="dim")
+        t.append(f"{n_total} ", style="bold")
+        t.append("имени upstream" if n_total == 1 else "имён upstream", style="dim")
+        console.print(t)
 
 
 def _render_missing_upstream(
@@ -177,7 +334,7 @@ def _render_missing_upstream(
 
 
 def _refs_panel_only(uname: str, urefs: List, title: str) -> Panel:
-    ref_table = _refs_table(urefs)
+    ref_table = _refs_table(urefs, show_upstream=False, box_style=box.ROUNDED)
     return Panel(
         ref_table,
         title=Text.from_markup(title),
@@ -203,8 +360,6 @@ def _render_one_upstream(
     title.append("upstream ", style="bold white")
     title.append(uname, style="bold bright_cyan")
     title.append(sub)
-
-    subtitle = Text(f"файл: {fpath}", style="dim cyan")
 
     part_opts: List = []
     options = udef.get("options") or []
@@ -240,8 +395,8 @@ def _render_one_upstream(
     back.add_column("w", style="dim", max_width=5)
     back.add_column("max_f", style="dim", max_width=6)
     back.add_column("fail_t", style="dim", max_width=8)
-    back.add_column("B", max_width=3)  # backup
-    back.add_column("D", max_width=3)  # down
+    back.add_column("B", max_width=3)
+    back.add_column("D", max_width=3)
     back.add_column("другое", style="dim")
     for i, line in enumerate(srv, 1):
         p = parse_server_options(line)
@@ -258,14 +413,14 @@ def _render_one_upstream(
     if not srv:
         back.add_row("—", "[dim]нет строк server[/]", "—", "—", "—", "—", "—", "—")
 
-    ref_table = _refs_table(urefs) if urefs else Text(
+    ref_table = _refs_table(urefs, show_upstream=False) if urefs else Text(
         "[dim]Ни один server/location не ссылается на этот upstream по имени (proxy_pass, fastcgi_pass, …).[/]"
     )
     if urefs and isinstance(ref_table, Table):
         ref_table.title = "[yellow]Где используется[/]"
 
     body = Group(
-        subtitle,
+        Text(f"файл: {fpath}", style="dim cyan"),
         Text(""),
         *part_opts,
         Text(""),
@@ -285,28 +440,47 @@ def _render_one_upstream(
     console.print()
 
 
-def _refs_table(urefs: List) -> Table:
+def _refs_table(
+    urefs: List,
+    show_upstream: bool = False,
+    *,
+    compact_path: bool = False,
+    compact_stream: bool = False,
+    box_style=box.ROUNDED,
+) -> Table:
     ref_table = Table(
         show_header=True,
         header_style="bold yellow",
-        box=box.ROUNDED,
+        box=box_style,
     )
-    ref_table.add_column("server_name", style="blue", no_wrap=True)
-    ref_table.add_column("listen", style="white", no_wrap=True, max_width=18)
-    ref_table.add_column("location", style="magenta", max_width=24)
-    ref_table.add_column("директива", style="green")
-    ref_table.add_column("значение", style="white", max_width=40)
-    ref_table.add_column("файл", style="dim", max_width=32)
-    ref_table.add_column("стрим", max_width=5)
+    if show_upstream:
+        ref_table.add_column("upstream", style="bright_cyan", no_wrap=True)
+    ref_table.add_column("server_name", style="blue", no_wrap=True, max_width=20)
+    ref_table.add_column("listen", style="white", no_wrap=True, max_width=16)
+    ref_table.add_column("location", style="magenta", max_width=20)
+    ref_table.add_column("директива", style="green", max_width=14)
+    ref_table.add_column("значение", style="white", max_width=36)
+    ref_table.add_column("файл", style="dim", max_width=28)
+    ref_table.add_column("стрим", width=5)
     for r in urefs:
-        val = (r.value or "")[: 200] + ("…" if len(r.value or "") > 200 else "")
-        ref_table.add_row(
+        val = (r.value or "")
+        if len(val) > 100:
+            val = val[:99] + "…"
+        path_cell = _shorten_path(r.config_file, 28) if compact_path else (r.config_file or "—")
+        if compact_stream:
+            sm = "S" if r.is_stream else "·"
+        else:
+            sm = "да" if r.is_stream else "—"
+        row = [
             r.server_name,
             r.listen,
             r.location_display(),
             r.from_directive,
             val,
-            r.config_file,
-            "да" if r.is_stream else "—",
-        )
+            path_cell,
+            sm,
+        ]
+        if show_upstream:
+            row.insert(0, r.upstream_name)
+        ref_table.add_row(*row)
     return ref_table
