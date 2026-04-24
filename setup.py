@@ -53,7 +53,7 @@ class PostInstallLibCommand(install_lib):
 
 setup(
     name="nginx-lens",
-    version="0.9.2",
+    version="0.9.3",
     description="CLI-инструмент для анализа, визуализации и диагностики конфигураций Nginx",
     author="Daniil Astrouski",
     author_email="shelovesuastra@gmail.com",
@@ -71,10 +71,18 @@ setup(
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
         ],
+        "web": [
+            "fastapi>=0.109.0",
+            "uvicorn[standard]>=0.27.0",
+            "httpx>=0.26.0",
+            "pydantic>=2.5.0",
+        ],
     },
     entry_points={
         "console_scripts": [
             "nginx-lens=commands.cli:main",
+            "nginx-lens-agent=agent_api.__main__:main",
+            "nginx-lens-hub=hub_app.main:run",
         ],
     },
     python_requires=">=3.8",
