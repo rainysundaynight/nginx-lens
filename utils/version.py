@@ -1,7 +1,7 @@
 """Версия дистрибутива. После `pip install` берётся из metadata; в dev-дереве — FALLBACK."""
 
 
-FALLBACK_VERSION = "0.9.3"
+FALLBACK_VERSION = "0.9.4"
 
 
 def get_version() -> str:
