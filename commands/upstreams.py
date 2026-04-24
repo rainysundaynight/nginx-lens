@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import typer
 from rich import box
@@ -17,12 +17,14 @@ from rich.text import Text
 
 from config.config_loader import get_config
 from parser.nginx_parser import parse_nginx_config
+from upstream_checker.checker import check_upstreams
 from utils.upstream_inspect import (
     collect_known_upstream_names,
     find_upstream_references,
     iter_upstream_blocks,
     parse_server_options,
 )
+from utils.progress import ProgressManager
 
 console = Console()
 
@@ -106,11 +108,55 @@ def _build_json(
     return {"config": path, "upstreams": out}
 
 
+def _addr_key(server_line: str) -> str:
+    return (server_line or "").strip().split()[0] if server_line else ""
+
+
+def _health_maps(
+    checked: Dict[str, List[Dict[str, Any]]],
+) -> Tuple[Dict[str, Dict[str, bool]], Dict[str, Tuple[int, int]]]:
+    """
+    Возвращает:
+    - by_upstream: upstream -> {host:port -> healthy}
+    - summary: upstream -> (total, unhealthy)
+    """
+    by: Dict[str, Dict[str, bool]] = {}
+    summary: Dict[str, Tuple[int, int]] = {}
+    for name, rows in (checked or {}).items():
+        m: Dict[str, bool] = {}
+        total = 0
+        bad = 0
+        for r in rows or []:
+            addr = _addr_key(r.get("address", ""))
+            if not addr:
+                continue
+            ok = bool(r.get("healthy", False))
+            m[addr] = ok
+            total += 1
+            if not ok:
+                bad += 1
+        by[name] = m
+        summary[name] = (total, bad)
+    return by, summary
+
+
+def _status_cell(ok: Optional[bool]) -> str:
+    if ok is True:
+        return "[green]OK[/green]"
+    if ok is False:
+        return "[red]DOWN[/red]"
+    return "[dim]—[/dim]"
+
+
 def _render_table_compact(
     path: str,
     blocks: List[Dict[str, Any]],
     refs: List,
     names_sorted: List[str],
+    *,
+    health_by_upstream: Optional[Dict[str, Dict[str, bool]]] = None,
+    health_summary: Optional[Dict[str, Tuple[int, int]]] = None,
+    upstreams_runtime: Optional[Dict[str, List[str]]] = None,
 ) -> None:
     console.print(
         f"[dim]Конфиг:[/] [white]{_shorten_path(path, 72)}[/]\n", highlight=False
@@ -128,6 +174,8 @@ def _render_table_compact(
     t1.add_column("# srv", justify="right", style="magenta")
     t1.add_column("параметры группы", style="green", max_width=48)
     t1.add_column("# ссылок", justify="right", style="yellow")
+    if health_by_upstream is not None:
+        t1.add_column("health", style="white", justify="right")
 
     for b in blocks:
         un = b.get("upstream") or "—"
@@ -140,13 +188,24 @@ def _render_table_compact(
         else:
             label = un
         ref_n = len([r for r in refs if r.upstream_name == un])
-        t1.add_row(
+        row = [
             label,
             _shorten_path(fpath, 40),
             str(len(b.get("servers", []))),
             _options_oneline(b.get("options") or []),
             str(ref_n),
-        )
+        ]
+        if health_by_upstream is not None:
+            total, bad = (health_summary or {}).get(un, (0, 0))
+            if total == 0 and upstreams_runtime is not None and un in upstreams_runtime:
+                total = len(upstreams_runtime.get(un, []) or [])
+            if total == 0:
+                row.append("[dim]—[/dim]")
+            elif bad == 0:
+                row.append("[green]OK[/green]")
+            else:
+                row.append(f"[red]{bad}[/red]/[white]{total}[/white]")
+        t1.add_row(*row)
     console.print(t1)
     console.print()
 
@@ -166,13 +225,17 @@ def _render_table_compact(
     t2.add_column("B", width=2)
     t2.add_column("D", width=2)
     t2.add_column("другое", style="dim", max_width=20)
+    if health_by_upstream is not None:
+        t2.add_column("health", style="white", width=6)
 
     for b in blocks:
         un = b.get("upstream") or "—"
         fpath = b.get("__file__") or "—"
         srvs = b.get("servers", [])
+        if not srvs and upstreams_runtime is not None:
+            srvs = upstreams_runtime.get(un, []) or []
         if not srvs:
-            t2.add_row(
+            row = [
                 un,
                 _shorten_path(fpath, 32),
                 "—",
@@ -182,10 +245,16 @@ def _render_table_compact(
                 "—",
                 "—",
                 "—",
-            )
+            ]
+            if health_by_upstream is not None:
+                row.append("[dim]—[/dim]")
+            t2.add_row(*row)
         else:
             for i, line in enumerate(srvs, 1):
                 p = parse_server_options(line)
+                ok = None
+                if health_by_upstream is not None:
+                    ok = (health_by_upstream.get(un) or {}).get(p["address"])
                 t2.add_row(
                     un,
                     _shorten_path(fpath, 32),
@@ -196,6 +265,7 @@ def _render_table_compact(
                     p["backup"] if p["backup"] != "—" else "—",
                     p["down"] if p["down"] != "—" else "—",
                     p["other"] if p["other"] != "—" else "—",
+                    *([_status_cell(ok)] if health_by_upstream is not None else []),
                 )
     console.print(t2)
     console.print()
@@ -244,12 +314,25 @@ def upstreams(
         "--panels",
         help="Панель на каждый upstream (подробно; по умолчанию — компактные таблицы).",
     ),
+    health: bool = typer.Option(
+        False,
+        "--health",
+        help="Проверить доступность upstream серверов (как nginx-lens health) и показать статус в таблицах.",
+    ),
+    timeout: Optional[float] = typer.Option(None, "--timeout", help="Таймаут проверки (сек)"),
+    retries: Optional[int] = typer.Option(None, "--retries", help="Количество попыток"),
+    mode: Optional[str] = typer.Option(None, "--mode", help="Режим проверки: tcp или http", case_sensitive=False),
+    max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Макс. потоков проверки"),
 ) -> None:
     """
     Показать named upstream: бэкенды, директивы блока, где используется (server_name, listen, location) и файлы.
 
     По умолчанию — три компактные таблицы. Флаг [cyan]--panels[/] включает прежний подробный вид с панелями.
     """
+    cfg = get_config()
+    defaults = cfg.get_defaults()
+    dynamic_upstream_config = cfg.get_dynamic_upstream_config()
+
     path = _config_path_from_cli(config_path)
     try:
         tree = parse_nginx_config(path)
@@ -259,6 +342,12 @@ def upstreams(
     except Exception as e:
         console.print(f"[red]Ошибка при разборе {path}: {e}[/red]")
         raise typer.Exit(1)
+
+    # Настраиваем интеграцию с dynamic upstream (важно и для health внутри upstreams)
+    dynamic_enabled = dynamic_upstream_config.get("enabled", False)
+    dynamic_api_url = dynamic_upstream_config.get("api_url")
+    dynamic_timeout = dynamic_upstream_config.get("timeout", 2.0)
+    tree.set_dynamic_upstream_config(dynamic_enabled, dynamic_api_url, dynamic_timeout)
 
     all_blocks = list(iter_upstream_blocks(tree.directives))
     if not all_blocks:
@@ -301,15 +390,59 @@ def upstreams(
         print(json.dumps(data, ensure_ascii=False, indent=2))
         raise typer.Exit(0)
 
+    # health-check (опционально)
+    checked = None
+    health_by_upstream = None
+    health_summary = None
+    upstreams_runtime = None
+    if health:
+        timeout_v = timeout if timeout is not None else defaults.get("timeout", 2.0)
+        retries_v = retries if retries is not None else defaults.get("retries", 1)
+        mode_v = (mode if mode is not None else defaults.get("mode", "tcp")).lower()
+        max_workers_v = (
+            max_workers if max_workers is not None else defaults.get("max_workers", 10)
+        )
+        upstreams_runtime = tree.get_upstreams()
+        if name:
+            upstreams_runtime = {name: upstreams_runtime.get(name, [])}
+        total_servers = sum(len(v) for v in (upstreams_runtime or {}).values())
+        with ProgressManager(
+            description="Проверка upstream серверов",
+            show_progress=total_servers > 5,
+        ) as pm:
+            checked = check_upstreams(
+                upstreams_runtime,
+                timeout=timeout_v,
+                retries=retries_v,
+                mode=mode_v,
+                max_workers=max_workers_v,
+                progress_manager=pm,
+            )
+        health_by_upstream, health_summary = _health_maps(checked)
+
     if not panels:
-        _render_table_compact(path, blocks, refs, names_sorted)
+        _render_table_compact(
+            path,
+            blocks,
+            refs,
+            names_sorted,
+            health_by_upstream=health_by_upstream,
+            health_summary=health_summary,
+            upstreams_runtime=upstreams_runtime,
+        )
     else:
         for uname in names_sorted:
             udefs = [b for b in blocks if b.get("upstream") == uname]
             urefs = [r for r in refs if r.upstream_name == uname]
             for idx, udef in enumerate(udefs):
                 _render_one_upstream(
-                    udef, urefs, uname, show_index=idx, total_same=len(udefs)
+                    udef,
+                    urefs,
+                    uname,
+                    show_index=idx,
+                    total_same=len(udefs),
+                    health_by_addr=(health_by_upstream or {}).get(uname, {}),
+                    runtime_servers=(upstreams_runtime or {}).get(uname, []) if health else None,
                 )
             if not udefs and urefs:
                 _render_missing_upstream(uname, urefs)
@@ -349,6 +482,9 @@ def _render_one_upstream(
     uname: str,
     show_index: int,
     total_same: int,
+    *,
+    health_by_addr: Optional[Dict[str, bool]] = None,
+    runtime_servers: Optional[List[str]] = None,
 ) -> None:
     fpath = udef.get("__file__") or "—"
     urefs = [r for r in all_refs if r.upstream_name == uname]
@@ -384,6 +520,8 @@ def _render_one_upstream(
         )
 
     srv = udef.get("servers", [])
+    if (not srv) and runtime_servers:
+        srv = runtime_servers
     back = Table(
         show_header=True,
         header_style="bold magenta",
@@ -398,9 +536,14 @@ def _render_one_upstream(
     back.add_column("B", max_width=3)
     back.add_column("D", max_width=3)
     back.add_column("другое", style="dim")
+    if health_by_addr is not None:
+        back.add_column("health", style="white", max_width=6)
     for i, line in enumerate(srv, 1):
         p = parse_server_options(line)
-        back.add_row(
+        ok = None
+        if health_by_addr is not None:
+            ok = health_by_addr.get(p["address"])
+        row = [
             str(i),
             p["address"],
             p["weight"],
@@ -409,9 +552,15 @@ def _render_one_upstream(
             p["backup"],
             p["down"],
             p["other"] if p["other"] != "—" else "—",
-        )
+        ]
+        if health_by_addr is not None:
+            row.append(_status_cell(ok))
+        back.add_row(*row)
     if not srv:
-        back.add_row("—", "[dim]нет строк server[/]", "—", "—", "—", "—", "—", "—")
+        row = ["—", "[dim]нет строк server[/]", "—", "—", "—", "—", "—", "—"]
+        if health_by_addr is not None:
+            row.append("[dim]—[/dim]")
+        back.add_row(*row)
 
     ref_table = _refs_table(urefs, show_upstream=False) if urefs else Text(
         "[dim]Ни один server/location не ссылается на этот upstream по имени (proxy_pass, fastcgi_pass, …).[/]"
