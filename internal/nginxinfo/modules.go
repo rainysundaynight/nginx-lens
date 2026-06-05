@@ -39,6 +39,18 @@ var directiveModule = map[string]string{
 	"stub_status":     "http_stub_status",
 }
 
+// defaultBuiltinModules — HTTP-модули, включённые в стандартную сборку nginx без --with-*.
+var defaultBuiltinModules = map[string]struct{}{
+	"http_proxy":      {},
+	"http_fastcgi":    {},
+	"http_uwsgi":      {},
+	"http_scgi":       {},
+	"http_memcached":  {},
+	"http_limit_req":  {},
+	"http_limit_conn": {},
+	"http_geo":        {},
+}
+
 // GroupModules раскладывает модули по группам.
 func GroupModules(build *BuildInfo) ModuleGroups {
 	g := ModuleGroups{}
@@ -165,11 +177,31 @@ func CheckDirectiveModules(tree *parser.ConfigTree, build *BuildInfo) []ModuleIs
 }
 
 func modulePresent(build *BuildInfo, mod, dir string) bool {
+	if isDefaultBuiltinModule(mod) && !isModuleExplicitlyDisabled(build, mod) {
+		return true
+	}
 	if HasModule(build, mod) || HasModule(build, dir) {
 		return true
 	}
 	if mod == "grpc" {
 		return HasModule(build, "http_v2")
+	}
+	return false
+}
+
+func isDefaultBuiltinModule(mod string) bool {
+	_, ok := defaultBuiltinModules[mod]
+	return ok
+}
+
+func isModuleExplicitlyDisabled(build *BuildInfo, module string) bool {
+	if build == nil || build.ConfigureArgs == "" {
+		return false
+	}
+	for _, flag := range []string{"--without-" + module + "_module", "--without-" + module} {
+		if strings.Contains(build.ConfigureArgs, flag) {
+			return true
+		}
 	}
 	return false
 }

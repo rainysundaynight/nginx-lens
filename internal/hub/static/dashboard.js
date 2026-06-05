@@ -330,11 +330,26 @@
     `;
   }
 
+  function kpiFromSnapshots(snaps) {
+    let high = 0;
+    let med = 0;
+    for (const s of snaps) {
+      if (s.status === "offline") continue;
+      high += s.severity?.high || 0;
+      med += s.severity?.med || 0;
+    }
+    const online = snaps.filter((s) => s.status !== "offline").length;
+    return {
+      agents_online: String(online),
+      agents_suffix: "/ " + snaps.length,
+      critical_issues: String(high).padStart(2, "0"),
+      warnings: String(med).padStart(2, "0"),
+      upstream_healthy: state.kpi.upstream_healthy,
+    };
+  }
+
   function renderAgents() {
     const snaps = filterSnapshots(state.snapshots || []);
-    const online = snaps.filter((s) => s.status !== "offline").length;
-    const warn = snaps.filter((s) => s.status === "warning").length;
-    const off = snaps.filter((s) => s.status === "offline").length;
     return `
       ${pageHeader(
         "Section · 01",
@@ -342,16 +357,7 @@
         "Парк nginx-агентов. Кликните по строке для детального snapshot.",
         '<button type="button" class="btn-primary" disabled style="opacity:0.5;cursor:not-allowed">+ Add agent</button>'
       )}
-      ${renderKpiCards(
-        {
-          agents_online: String(online),
-          agents_suffix: "/ " + snaps.length,
-          critical_issues: String(off).padStart(2, "0"),
-          warnings: String(warn).padStart(2, "0"),
-          upstream_healthy: state.kpi.upstream_healthy,
-        },
-        0
-      )}
+      ${renderKpiCards(kpiFromSnapshots(snaps), 0)}
       <div class="agent-table-wrap">${renderAgentTable(snaps)}</div>
     `;
   }
@@ -437,8 +443,8 @@
         ["Security", cats.security, ib.security],
         ["Reliability", cats.reliability, ib.reliability],
         ["Performance", cats.performance, ib.performance],
-        ["Maintainability", cats.maintainability, 0],
-        ["Observability", cats.observability, 0],
+        ["Maintainability", cats.maintainability, ib.maintainability],
+        ["Observability", cats.observability, ib.observability],
       ]
         .map(([label, score, issues]) => renderCategoryCard(label, score, issues))
         .join("")}</div>
@@ -752,21 +758,7 @@
 
   function patchAgents() {
     const snaps = filterSnapshots(state.snapshots || []);
-    const online = snaps.filter((s) => s.status !== "offline").length;
-    const warn = snaps.filter((s) => s.status === "warning").length;
-    const off = snaps.filter((s) => s.status === "offline").length;
-    if (
-      !patchKpiGrid(
-        {
-          agents_online: String(online),
-          agents_suffix: "/ " + snaps.length,
-          critical_issues: String(off).padStart(2, "0"),
-          warnings: String(warn).padStart(2, "0"),
-          upstream_healthy: state.kpi.upstream_healthy,
-        },
-        0
-      )
-    ) {
+    if (!patchKpiGrid(kpiFromSnapshots(snaps), 0)) {
       return false;
     }
     const wrap = document.querySelector(".agent-table-wrap");
@@ -802,8 +794,8 @@
         ["Security", cats.security, ib.security],
         ["Reliability", cats.reliability, ib.reliability],
         ["Performance", cats.performance, ib.performance],
-        ["Maintainability", cats.maintainability, 0],
-        ["Observability", cats.observability, 0],
+        ["Maintainability", cats.maintainability, ib.maintainability],
+        ["Observability", cats.observability, ib.observability],
       ];
       const [label, score, issues] = entries[i] || [];
       if (label == null) return;

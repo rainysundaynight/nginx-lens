@@ -27,7 +27,8 @@ func TestBuildHubStateOnline(t *testing.T) {
 				"score": map[string]interface{}{
 					"total": float64(85),
 					"categories": []interface{}{
-						map[string]interface{}{"name": "security", "score": float64(90)},
+						map[string]interface{}{"name": "security", "score": float64(90), "issues": float64(2)},
+						map[string]interface{}{"name": "performance", "score": float64(84), "issues": float64(7)},
 					},
 				},
 				"analyze": map[string]interface{}{
@@ -47,6 +48,8 @@ func TestBuildHubStateOnline(t *testing.T) {
 	assert.Equal(t, 1, state.Meta.AgentsOnline)
 	assert.Equal(t, "10.0.0.1-8090", state.Snapshots[0].ID)
 	assert.Equal(t, 85, state.Snapshots[0].ConfigScore)
+	assert.Equal(t, 2, state.Snapshots[0].IssuesBreakdown["security"])
+	assert.Equal(t, 7, state.Snapshots[0].IssuesBreakdown["performance"])
 	assert.Equal(t, 1, state.Severity.High)
 	assert.Equal(t, "warning", state.Snapshots[0].Status)
 }

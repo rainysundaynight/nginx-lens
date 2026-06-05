@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] — 2026-06-05
+
+### Fixed
+
+- Hub Agents: KPI Critical/Warnings считаются по severity issues, а не по числу offline/warning-агентов
+- Hub snapshot: issues breakdown по категориям score (security, performance, …), а не high→security / medium→performance
+- Ложное предупреждение «модуль http_proxy не найден» для встроенных модулей nginx (proxy_pass и др.)
+
 ## [1.1.0] — 2026-06-05
 
 ### Added

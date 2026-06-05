@@ -299,10 +299,8 @@ func buildHubSnapshot(item map[string]interface{}) HubSnapshot {
 		Med:  intMapVal(analyze, "summary", "medium"),
 		Low:  intMapVal(analyze, "summary", "low"),
 	}
-	s.IssuesBreakdown = map[string]int{
-		"security":    intMapVal(analyze, "summary", "high"),
-		"reliability": 0,
-		"performance": intMapVal(analyze, "summary", "medium"),
+	if score, ok := raw["score"].(map[string]interface{}); ok {
+		s.IssuesBreakdown = parseCategoryIssues(score)
 	}
 	s.Issues = parseIssues(summary)
 
@@ -371,6 +369,26 @@ func parseCategories(score map[string]interface{}) HubCategories {
 		case "observability":
 			out.Observability = val
 		}
+	}
+	return out
+}
+
+func parseCategoryIssues(score map[string]interface{}) map[string]int {
+	out := map[string]int{
+		"security": 0, "reliability": 0, "performance": 0,
+		"maintainability": 0, "observability": 0,
+	}
+	cats, _ := score["categories"].([]interface{})
+	for _, c := range cats {
+		m, _ := c.(map[string]interface{})
+		if m == nil {
+			continue
+		}
+		name, _ := m["name"].(string)
+		if _, ok := out[name]; !ok {
+			continue
+		}
+		out[name] = int(floatVal(m["issues"]))
 	}
 	return out
 }
