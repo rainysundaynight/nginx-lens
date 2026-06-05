@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
 	"github.com/rainysundaynight/nginx-lens/internal/export"
@@ -50,11 +49,10 @@ func newDiffCmd() *cobra.Command {
 
 			st := newStyler(cfg)
 			if len(diffs) == 0 {
-				fmt.Println(st.ok("Структурных отличий не найдено"))
+				printEmptyOK(st, "Структурных отличий не найдено")
 				return nil
 			}
-			fmt.Println(st.header(fmt.Sprintf("Найдено изменений: %d", len(diffs))))
-			fmt.Println(st.gray(strings.Repeat("─", 72)))
+			printSection(st, fmt.Sprintf("Diff (%d changes)", len(diffs)))
 			for _, d := range diffs {
 				printDiffLine(st, d)
 			}

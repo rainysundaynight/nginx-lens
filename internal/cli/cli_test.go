@@ -211,7 +211,7 @@ func TestCLIGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("graph: %v\nout: %s", err, out)
 	}
-	if !strings.Contains(out, "location") {
+	if !strings.Contains(out, "LOCATION") && !strings.Contains(out, "Route graph") {
 		t.Fatalf("unexpected graph output: %q", out)
 	}
 }

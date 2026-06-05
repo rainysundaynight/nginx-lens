@@ -39,7 +39,7 @@ func newExplainCmd() *cobra.Command {
 				return export.PrintYAML(result)
 			}
 			st := newStyler(cfg)
-			fmt.Println(st.header("Trace: " + url))
+			printSection(st, "Trace: "+url)
 			for _, step := range result.Trace {
 				mark := st.gray("·")
 				if step.Matched {

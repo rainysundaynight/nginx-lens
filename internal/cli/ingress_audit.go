@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
@@ -40,10 +39,18 @@ func newIngressAuditCmd() *cobra.Command {
 			case "yaml":
 				return export.PrintYAML(out)
 			}
-			fmt.Printf("Ingress rules: %d, issues: %d\n", len(rules), len(issues))
-			for _, iss := range issues {
-				fmt.Printf("[%s] %s %s — %s\n", iss.Type, iss.Host, iss.Path, iss.Message)
+			st := newStyler(cfg)
+			printSection(st, "Ingress audit")
+			printSummary(st, "Rules: %d, issues: %d", len(rules), len(issues))
+			if len(issues) == 0 {
+				printEmptyOK(st, "Расхождений Ingress и nginx не найдено.")
+				return nil
 			}
+			rows := make([][]string, 0, len(issues))
+			for _, iss := range issues {
+				rows = append(rows, []string{iss.Type, iss.Host, iss.Path, iss.Message})
+			}
+			printTable(st, []int{12, 24, 16, 0}, []string{"TYPE", "HOST", "PATH", "MESSAGE"}, rows)
 			return nil
 		},
 	}

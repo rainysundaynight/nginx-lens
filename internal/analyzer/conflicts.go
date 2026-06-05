@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/rainysundaynight/nginx-lens/internal/parser"
@@ -56,13 +58,14 @@ func locationsConflict(loc1, loc2 string) bool {
 	return strings.HasPrefix(loc1, loc2) || strings.HasPrefix(loc2, loc1)
 }
 
-// FindListenServerNameConflicts находит конфликтующие listen/server_name.
+type serverInfo struct {
+	block      parser.Node
+	listen     map[string]struct{}
+	serverName map[string]struct{}
+}
+
+// FindListenServerNameConflicts находит дублирующиеся пары listen+server_name между server-блоками.
 func FindListenServerNameConflicts(tree *parser.ConfigTree) []ListenConflict {
-	type serverInfo struct {
-		block      parser.Node
-		listen     map[string]struct{}
-		serverName map[string]struct{}
-	}
 	var servers []serverInfo
 	for _, item := range Walk(tree) {
 		if item.Node.Block != "server" {
@@ -85,6 +88,8 @@ func FindListenServerNameConflicts(tree *parser.ConfigTree) []ListenConflict {
 		}
 		servers = append(servers, info)
 	}
+	servers = dedupeServerInfos(servers)
+
 	var conflicts []ListenConflict
 	for i := 0; i < len(servers); i++ {
 		for j := i + 1; j < len(servers); j++ {
@@ -99,6 +104,8 @@ func FindListenServerNameConflicts(tree *parser.ConfigTree) []ListenConflict {
 					commonName = append(commonName, n)
 				}
 			}
+			sort.Strings(commonListen)
+			sort.Strings(commonName)
 			if len(commonListen) > 0 && len(commonName) > 0 {
 				conflicts = append(conflicts, ListenConflict{
 					Server1:    servers[i].block,
@@ -110,4 +117,47 @@ func FindListenServerNameConflicts(tree *parser.ConfigTree) []ListenConflict {
 		}
 	}
 	return conflicts
+}
+
+func dedupeServerInfos(servers []serverInfo) []serverInfo {
+	seen := make(map[string]struct{}, len(servers))
+	out := make([]serverInfo, 0, len(servers))
+	for _, s := range servers {
+		if s.block.File == "" || s.block.Line <= 0 {
+			out = append(out, s)
+			continue
+		}
+		key := serverInfoKey(s)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func serverInfoKey(s serverInfo) string {
+	listen := stringSetKeys(s.listen)
+	names := stringSetKeys(s.serverName)
+	return fmt.Sprintf("%s:%d:%s:%s", s.block.File, s.block.Line, strings.Join(listen, ","), strings.Join(names, ","))
+}
+
+func stringSetKeys(m map[string]struct{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func listenConflictDesc(lc ListenConflict) string {
+	return fmt.Sprintf(
+		"duplicate listen [%s] + server_name [%s] in %s:%d and %s:%d",
+		strings.Join(lc.Listen, ", "),
+		strings.Join(lc.ServerName, ", "),
+		lc.Server1.File, lc.Server1.Line,
+		lc.Server2.File, lc.Server2.Line,
+	)
 }

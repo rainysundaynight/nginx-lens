@@ -95,26 +95,48 @@ func newLogsCmd() *cobra.Command {
 				return export.PrintYAML(report)
 			}
 
+			st := newStyler(cfg)
+			printSection(st, "Access & error logs")
 			if snap, ok := report["access_snapshot"].(*logs.AccessSnapshot); ok {
-				fmt.Printf("Access: %d req, RPS %.2f, 404=%d, 5xx=%d, p95=%.1fms\n",
-					snap.TotalRequests, snap.RPS, snap.Status404, snap.Status5xx, snap.P95Latency)
+				printKVTable(st, [][2]string{
+					{"Access requests", fmt.Sprintf("%d", snap.TotalRequests)},
+					{"RPS", fmt.Sprintf("%.2f", snap.RPS)},
+					{"404", fmt.Sprintf("%d", snap.Status404)},
+					{"5xx", fmt.Sprintf("%d", snap.Status5xx)},
+					{"P95 latency", fmt.Sprintf("%.1f ms", snap.P95Latency)},
+				})
 			}
 			if errStats, ok := report["error"].(*logs.ErrorStats); ok {
-				fmt.Printf("Error: total=%d connect=%d timeout=%d\n",
-					errStats.TotalErrors, errStats.ConnectFailed, errStats.UpstreamTimed)
+				fmt.Println()
+				printGroup(st, "Error log")
+				printKVTable(st, [][2]string{
+					{"Total errors", fmt.Sprintf("%d", errStats.TotalErrors)},
+					{"Connect failed", fmt.Sprintf("%d", errStats.ConnectFailed)},
+					{"Upstream timeout", fmt.Sprintf("%d", errStats.UpstreamTimed)},
+				})
 			}
 			if cors, ok := report["correlations"].([]logs.UpstreamCorrelation); ok && len(cors) > 0 {
-				fmt.Println("\nCorrelations (upstream):")
+				fmt.Println()
+				printGroup(st, "Correlations")
+				rows := make([][]string, 0, len(cors))
 				for _, c := range cors {
-					fmt.Printf("  %s: access 5xx %.1f%% (%d), errors %d\n",
-						c.Upstream, c.Access5xxPct, c.Access502, c.ErrorTotal)
+					rows = append(rows, []string{
+						c.Upstream,
+						fmt.Sprintf("%.1f%%", c.Access5xxPct),
+						fmt.Sprintf("%d", c.Access502),
+						fmt.Sprintf("%d", c.ErrorTotal),
+					})
 				}
+				printTable(st, []int{20, 10, 8, 8}, []string{"UPSTREAM", "5XX %", "502", "ERRORS"}, rows)
 			}
-			if stats, ok := report["access"].(*logs.Stats); ok {
-				fmt.Printf("\nTop paths (%d total):\n", stats.TotalRequests)
+			if stats, ok := report["access"].(*logs.Stats); ok && len(stats.TopPaths) > 0 {
+				fmt.Println()
+				printGroup(st, fmt.Sprintf("Top paths (%d total)", stats.TotalRequests))
+				rows := make([][]string, 0, len(stats.TopPaths))
 				for _, e := range stats.TopPaths {
-					fmt.Printf("  %s: %d\n", e.Key, e.Count)
+					rows = append(rows, []string{e.Key, fmt.Sprintf("%d", e.Count)})
 				}
+				printTable(st, []int{40, 10}, []string{"PATH", "COUNT"}, rows)
 			}
 			return nil
 		},

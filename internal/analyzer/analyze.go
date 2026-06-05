@@ -80,7 +80,7 @@ func CollectIssues(result AnalysisResult) []Issue {
 		add("unused_variable", v.Name, "", 0)
 	}
 	for _, lc := range result.ListenConflicts {
-		add("listen_servername_conflict", "listen/server_name conflict", lc.Server1.File, lc.Server1.Line)
+		add("listen_servername_conflict", listenConflictDesc(lc), lc.Server1.File, lc.Server1.Line)
 	}
 	for _, r := range result.RewriteIssues {
 		file, line := "", 0

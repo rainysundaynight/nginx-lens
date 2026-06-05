@@ -72,16 +72,34 @@ func newUpstreamsCmd() *cobra.Command {
 			case "yaml":
 				return export.PrintYAML(output)
 			}
+			st := newStyler(cfg)
+			printSection(st, "Upstreams")
 			for _, b := range output {
-				fmt.Printf("\nupstream %s (%s)\n", b.Name, b.File)
-				for _, s := range b.Servers {
-					fmt.Printf("  server %s\n", s)
+				printGroup(st, b.Name+" ("+b.File+")")
+				if len(b.Servers) > 0 {
+					healthByAddr := map[string]upstream.ServerHealth{}
+					if runHealth {
+						for _, hs := range b.Health[b.Name] {
+							healthByAddr[hs.Address] = hs
+						}
+					}
+					rows := make([][]string, 0, len(b.Servers))
+					for _, s := range b.Servers {
+						status := st.gray("—")
+						if hs, ok := healthByAddr[s]; ok {
+							status = statusLabel(st, hs.Healthy)
+						}
+						rows = append(rows, []string{s, status})
+					}
+					printTable(st, []int{28, 8}, []string{"SERVER", "STATUS"}, rows)
 				}
 				if len(b.Refs) > 0 {
-					fmt.Println("  references:")
+					refRows := make([][]string, 0, len(b.Refs))
 					for _, r := range b.Refs {
-						fmt.Printf("    %s → %s\n", r.FromDirective, r.Value)
+						refRows = append(refRows, []string{r.FromDirective, r.Value})
 					}
+					printSummary(st, "References:")
+					printTable(st, []int{16, 0}, []string{"FROM", "TARGET"}, refRows)
 				}
 			}
 			return nil

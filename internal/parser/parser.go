@@ -115,6 +115,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 
 		if m := reUpstream.FindStringSubmatch(line); m != nil {
 			name := m[1]
+			blockStartLine := i + 1
 			blockLines, newI, inline := parseBlockContent(line, lines, i)
 			i = newI
 			if inline != "" {
@@ -127,12 +128,14 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 				Servers:    servers,
 				Options:    options,
 				File:       sourceFile,
+				Line:       blockStartLine,
 			})
 			continue
 		}
 
 		if strings.HasPrefix(line, "location ") {
 			mod, path := parseLocationHeader(line)
+			blockStartLine := i + 1
 			blockLines, newI, inline := parseBlockContent(line, lines, i)
 			i = newI
 			if inline != "" {
@@ -141,7 +144,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 			subDirectives, subUpstreams := parseBlock(blockLines, baseDir, sourceFile)
 			directives = append(directives, Node{
 				Block: "location", LocModifier: mod, Arg: path,
-				Directives: subDirectives, File: sourceFile, Line: i + 1,
+				Directives: subDirectives, File: sourceFile, Line: blockStartLine,
 			})
 			for k, v := range subUpstreams {
 				upstreams[k] = append(upstreams[k], v...)
@@ -155,6 +158,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 			if len(m) > 2 {
 				blockArg = m[2]
 			}
+			blockStartLine := i + 1
 			blockLines, newI, inline := parseBlockContent(line, lines, i)
 			i = newI
 			if inline != "" {
@@ -166,7 +170,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 				Arg:        blockArg,
 				Directives: subDirectives,
 				File:       sourceFile,
-				Line:         i + 1,
+				Line:       blockStartLine,
 			}
 			directives = append(directives, node)
 			for k, v := range subUpstreams {
@@ -180,6 +184,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 				Directive: m[1],
 				Args:      m[2],
 				File:      sourceFile,
+				Line:      i + 1,
 			})
 		}
 		i++

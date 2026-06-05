@@ -45,17 +45,26 @@ func newBlastRadiusCmd() *cobra.Command {
 				return export.PrintYAML(report)
 			}
 			st := newStyler(cfg)
-			status := st.green("UP")
-			if !report.Healthy {
-				status = st.red("DOWN")
-			}
-			fmt.Printf("upstream %s (%s)\n", st.cyan(report.Upstream), status)
-			for _, e := range report.Impact {
-				fmt.Printf("  %s server %s:%s\n", st.gray("└──"), e.ServerName, e.Listen)
-				fmt.Printf("        %s location %s → %s\n", st.gray("└──"), st.yellow(e.Location), st.green(e.ProxyPass))
-			}
-			if len(report.Impact) == 0 {
-				fmt.Println(st.gray("  (нет ссылок на этот upstream)"))
+			status := statusLabel(st, report.Healthy)
+			printSection(st, "Blast-radius: "+report.Upstream)
+			printKVTable(st, [][2]string{
+				{"Upstream", st.cyan(report.Upstream)},
+				{"Status", status},
+				{"Impacted locations", fmt.Sprintf("%d", len(report.Impact))},
+			})
+			if len(report.Impact) > 0 {
+				rows := make([][]string, 0, len(report.Impact))
+				for _, e := range report.Impact {
+					rows = append(rows, []string{
+						e.ServerName + ":" + e.Listen,
+						e.Location,
+						e.ProxyPass,
+					})
+				}
+				fmt.Println()
+				printTable(st, []int{24, 20, 0}, []string{"SERVER", "LOCATION", "PROXY_PASS"}, rows)
+			} else {
+				printSummary(st, "Нет ссылок на этот upstream")
 			}
 			return nil
 		},

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/rainysundaynight/nginx-lens/internal/config"
@@ -72,17 +71,18 @@ func newHealthCmd() *cobra.Command {
 
 func printHealthTable(cfg config.Config, results map[string][]upstream.ServerHealth) bool {
 	st := newStyler(cfg)
+	printSection(st, "Upstream health")
 	unhealthy := false
 	for name, servers := range results {
-		fmt.Printf("\n%s\n", st.header("["+name+"]"))
+		printGroup(st, name)
+		rows := make([][]string, 0, len(servers))
 		for _, s := range servers {
-			if s.Healthy {
-				fmt.Printf("  %s  %s\n", s.Address, st.green("OK"))
-			} else {
-				fmt.Printf("  %s  %s\n", s.Address, st.red("FAIL"))
+			if !s.Healthy {
 				unhealthy = true
 			}
+			rows = append(rows, []string{s.Address, statusLabel(st, s.Healthy)})
 		}
+		printTable(st, []int{28, 8}, []string{"ADDRESS", "STATUS"}, rows)
 	}
 	return unhealthy
 }

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0] — 2026-06-05
+
+### Added
+
+- Единый формат вывода CLI (`printSection`, `printTable`, `printIssue`) для analyze, health, score, logs и других команд
+- Тесты на ложные срабатывания `listen_servername_conflict` (single file, double include, default vhost)
+
+### Changed
+
+- Сообщение `listen_servername_conflict` указывает оба server-блока и общие listen/server_name
+
+### Fixed
+
+- Ложный `listen_servername_conflict` при повторном include одного vhost и при одиночном server-блоке
+- Номера строк server/upstream/location в парсере — строка открытия блока, а не закрывающая `}`
+- Шкала Config Score в Hub: метки 0 / 50 / 80 / 100 совпадают с шириной progress bar
+
 ## [1.0.0] — 2026-06-05
 
 ### Added

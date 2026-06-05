@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
@@ -35,15 +34,14 @@ func newCertsCmd() *cobra.Command {
 			}
 			st := newStyler(cfg)
 			if len(issues) == 0 {
-				fmt.Println(st.ok("Проблем с сертификатами не найдено."))
+				printEmptyOK(st, "Проблем с сертификатами не найдено.")
 				return nil
 			}
+			printSection(st, "SSL/TLS certificates")
 			exitCode := 0
 			for _, iss := range issues {
-				fmt.Printf("[%s] %s: %s\n", st.severity(string(iss.Severity)), st.cyan(iss.Type), iss.Message)
-				if iss.CertPath != "" {
-					fmt.Printf("  cert: %s\n", st.gray(iss.CertPath))
-				}
+				loc := iss.CertPath
+				printIssue(st, string(iss.Severity), iss.Type, iss.Message, loc)
 				if cfg.Certs.FailOnExpired && iss.Type == "cert_expired" {
 					exitCode = 1
 				}

@@ -40,27 +40,24 @@ func newAnalyzeCmd() *cobra.Command {
 func printAnalyzeTable(cfg config.Config, issues []analyzer.Issue) {
 	st := newStyler(cfg)
 	if len(issues) == 0 {
-		fmt.Println(st.ok("Проблем не найдено."))
+		printEmptyOK(st, "Проблем не найдено.")
 		return
 	}
-	fmt.Printf("%s  %s  %s  %s\n", st.bold("TYPE"), st.bold("SEVERITY"), st.bold("FILE:LINE"), st.bold("DESCRIPTION"))
-	fmt.Println(st.gray(stringsRepeat("─", 100)))
+	printSection(st, "Analysis issues")
+	rows := make([][]string, 0, len(issues))
 	for _, i := range issues {
-		loc := ""
-		if i.File != "" {
-			loc = i.File
-			if i.Line > 0 {
-				loc += fmt.Sprintf(":%d", i.Line)
-			}
-		}
-		fmt.Printf("%-28s %-8s %-12s %s\n", st.cyan(i.Type), st.severity(string(i.Severity)), st.gray(loc), i.Description)
+		loc := issueLocation(i)
+		rows = append(rows, []string{st.cyan(i.Type), st.severity(string(i.Severity)), st.gray(loc), i.Description})
 	}
+	printTable(st, []int{28, 8, 14, 0}, []string{"TYPE", "SEVERITY", "FILE:LINE", "DESCRIPTION"}, rows)
 }
 
-func stringsRepeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
+func issueLocation(i analyzer.Issue) string {
+	if i.File == "" {
+		return ""
 	}
-	return result
+	if i.Line > 0 {
+		return fmt.Sprintf("%s:%d", i.File, i.Line)
+	}
+	return i.File
 }

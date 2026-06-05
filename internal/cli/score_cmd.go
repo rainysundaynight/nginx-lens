@@ -39,6 +39,7 @@ func newScoreCmd() *cobra.Command {
 				return export.PrintYAML(report)
 			}
 			st := newStyler(cfg)
+			printSection(st, "Config score")
 			scoreColor := st.green
 			if report.Total < 70 {
 				scoreColor = st.yellow
@@ -46,12 +47,22 @@ func newScoreCmd() *cobra.Command {
 			if report.Total < 50 {
 				scoreColor = st.red
 			}
-			fmt.Printf("Config Score: %s\n\n", scoreColor(fmt.Sprintf("%.0f/100", report.Total)))
+			printKVTable(st, [][2]string{
+				{"Total", scoreColor(fmt.Sprintf("%.0f/100", report.Total))},
+			})
+			rows := make([][]string, 0, len(report.Categories))
 			for _, c := range report.Categories {
-				fmt.Printf("  %-16s %s (weight %.0f%%, issues %d)\n", st.cyan(c.Name), st.bold(fmt.Sprintf("%.0f", c.Score)), c.Weight*100, c.Issues)
+				rows = append(rows, []string{
+					st.cyan(c.Name),
+					st.bold(fmt.Sprintf("%.0f", c.Score)),
+					fmt.Sprintf("%.0f%%", c.Weight*100),
+					fmt.Sprintf("%d", c.Issues),
+				})
 			}
+			fmt.Println()
+			printTable(st, []int{16, 8, 10, 8}, []string{"CATEGORY", "SCORE", "WEIGHT", "ISSUES"}, rows)
 			if len(report.TopActions) > 0 {
-				fmt.Println("\n" + st.header("Top recommendations:"))
+				printSection(st, "Top recommendations")
 				for i, a := range report.TopActions {
 					fmt.Printf("  %d. %s\n", i+1, st.yellow(a))
 				}

@@ -45,12 +45,16 @@ func newMetricsCmd() *cobra.Command {
 			case "yaml":
 				return export.PrintYAML(metrics)
 			}
-			for k, v := range metrics {
-				if k == "directive_counts" {
-					continue
+			st := newStyler(cfg)
+			printSection(st, "Configuration metrics")
+			keys := []string{"servers", "locations", "upstreams", "directives"}
+			rows := make([][]string, 0, len(keys))
+			for _, k := range keys {
+				if v, ok := metrics[k]; ok {
+					rows = append(rows, []string{k, fmt.Sprintf("%v", v)})
 				}
-				fmt.Printf("%s: %v\n", k, v)
 			}
+			printTable(st, []int{16, 12}, []string{"METRIC", "VALUE"}, rows)
 			return nil
 		},
 	}

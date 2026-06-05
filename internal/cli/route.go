@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
 	"github.com/rainysundaynight/nginx-lens/internal/export"
@@ -39,8 +39,18 @@ func newRouteCmd() *cobra.Command {
 			case "yaml":
 				return export.PrintYAML(result)
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			st := newStyler(cfg)
+			printSection(st, "Route: "+url)
+			loc := ""
+			if result.Location != nil {
+				loc = strings.TrimSpace(result.Location.Arg)
+			}
+			printKVTable(st, [][2]string{
+				{"Server name", nodeDirective(result.Server, "server_name")},
+				{"Listen", nodeDirective(result.Server, "listen")},
+				{"Location", loc},
+				{"Proxy pass", result.ProxyPass},
+			})
 			return nil
 		},
 	}

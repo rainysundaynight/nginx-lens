@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"fmt"
+	"strings"
 
 	"github.com/rainysundaynight/nginx-lens/internal/export"
 	"github.com/rainysundaynight/nginx-lens/internal/upstream"
@@ -37,11 +37,15 @@ func newResolveCmd() *cobra.Command {
 			case "yaml":
 				return export.PrintYAML(export.ResolveExport{Upstreams: results})
 			}
+			st := newStyler(cfg)
+			printSection(st, "DNS resolve")
 			for name, servers := range results {
-				fmt.Printf("\n[%s]\n", name)
+				printGroup(st, name)
+				rows := make([][]string, 0, len(servers))
 				for _, s := range servers {
-					fmt.Printf("  %s → %v\n", s.Address, s.Resolved)
+					rows = append(rows, []string{s.Address, strings.Join(s.Resolved, ", ")})
 				}
+				printTable(st, []int{28, 0}, []string{"ADDRESS", "RESOLVED"}, rows)
 			}
 			return nil
 		},

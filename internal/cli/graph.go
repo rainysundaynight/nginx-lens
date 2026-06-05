@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +18,8 @@ func newGraphCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			st := newStyler(cfg)
+			printSection(st, "Route graph")
 			for _, item := range analyzer.Walk(tree) {
 				if item.Node.Block != "server" {
 					continue
@@ -28,7 +28,8 @@ func newGraphCmd() *cobra.Command {
 				if serverLabel == "" {
 					serverLabel = "(default)"
 				}
-				fmt.Printf("server %s\n", serverLabel)
+				printGroup(st, "server "+serverLabel)
+				rows := make([][]string, 0)
 				for _, sub := range analyzer.WalkNodes(item.Node.Directives, &item.Node) {
 					if sub.Node.Block != "location" {
 						continue
@@ -40,7 +41,10 @@ func newGraphCmd() *cobra.Command {
 							break
 						}
 					}
-					fmt.Printf("  location %s → %s\n", sub.Node.Arg, proxyPass)
+					rows = append(rows, []string{sub.Node.Arg, proxyPass})
+				}
+				if len(rows) > 0 {
+					printTable(st, []int{24, 0}, []string{"LOCATION", "PROXY_PASS"}, rows)
 				}
 			}
 			return nil

@@ -41,7 +41,7 @@ func newValidateCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Println(st.header("=== Policy-only режим ==="))
+				printSection(st, "Policy-only режим")
 				engine := policyEngineFromCfg(cfg)
 				policyIssues := engine.Run(tree)
 				results["policy"] = policyIssues
@@ -64,7 +64,7 @@ func newValidateCmd() *cobra.Command {
 			}
 
 			if !cfg.Validate.SkipSyntax {
-				fmt.Println(st.header("=== 1. Проверка синтаксиса ==="))
+				printSection(st, "1. Проверка синтаксиса")
 				valid, errors, synErr := checkNginxSyntax(cfg, cfg.Validate.SkipWarns)
 				if synErr != nil {
 					return synErr
@@ -87,7 +87,7 @@ func newValidateCmd() *cobra.Command {
 			}
 
 			if !cfg.Validate.SkipAnalysis {
-				fmt.Println(st.header("=== 2. Анализ проблем ==="))
+				printSection(st, "2. Анализ проблем")
 				result := analyzer.RunAnalysis(tree)
 				exportData := export.FormatAnalyzeResults(result, analyzeFilter(cfg))
 				if !cfg.Validate.SkipPolicy && len(cfg.Policy.Packs)+len(cfg.Policy.Rules) > 0 {
@@ -112,7 +112,7 @@ func newValidateCmd() *cobra.Command {
 			}
 
 			if !cfg.Validate.SkipCerts && !cfg.Policy.PolicyOnly {
-				fmt.Println(st.header("=== SSL/TLS сертификаты ==="))
+				printSection(st, "SSL/TLS сертификаты")
 				warnDays := cfg.Certs.WarnDays
 				if warnDays == 0 {
 					warnDays = 30
@@ -129,7 +129,7 @@ func newValidateCmd() *cobra.Command {
 
 			ups := tree.GetUpstreams()
 			if !cfg.Validate.SkipUpstream {
-				fmt.Println(st.header("=== 3. Проверка upstream ==="))
+				printSection(st, "3. Проверка upstream")
 				health := upstream.CheckUpstreams(
 					ups,
 					cfg.Defaults.Timeout,
@@ -148,7 +148,7 @@ func newValidateCmd() *cobra.Command {
 			}
 
 			if !cfg.Validate.SkipDNS {
-				fmt.Println(st.header("=== 4. DNS resolve ==="))
+				printSection(st, "4. DNS resolve")
 				setupDNSCache(cfg, false)
 				resolved := upstream.ResolveUpstreams(ups, cfg.Defaults.MaxWorkers, true, cfg.Cache.TTL, "")
 				results["dns"] = map[string]interface{}{"servers": resolved}
