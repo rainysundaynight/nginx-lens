@@ -58,6 +58,12 @@ func AppendIssue(exp *AnalyzeExport, issue analyzer.Issue, filter analyzer.Filte
 	if !analyzer.ShouldIncludeIssue(issue.Type, issue.Severity, filter) {
 		return
 	}
+	key := analyzer.IssueDedupeKey(issue)
+	for _, existing := range exp.Issues {
+		if analyzer.IssueDedupeKey(existing) == key {
+			return
+		}
+	}
 	exp.Issues = append(exp.Issues, issue)
 	if exp.Summary == nil {
 		exp.Summary = map[string]int{"high": 0, "medium": 0, "low": 0}

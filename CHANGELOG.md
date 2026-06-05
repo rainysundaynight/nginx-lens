@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3] — 2026-06-05
+
+### Fixed
+
+- Дубликаты issues в Hub при парсинге `nginx -T`: expanded-секции уже содержат include-файлы, повторный разбор `include` больше не дублирует server-блоки
+- Дедупликация issues по `(type, file, line, description)` в `CollectIssues` и `AppendIssue`
+
 ## [1.1.2] — 2026-06-05
 
 ### Added

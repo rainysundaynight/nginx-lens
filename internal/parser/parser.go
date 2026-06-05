@@ -42,8 +42,16 @@ func ParseNginxConfig(path string) (*ConfigTree, error) {
 		return nil, err
 	}
 
-	directives, upstreams := parseBlock(lines, baseDir, absPath)
+	directives, upstreams := parseBlockOpts(lines, baseDir, absPath, parseBlockOptions{})
 	return NewConfigTree(directives, upstreams), nil
+}
+
+type parseBlockOptions struct {
+	skipIncludes bool
+}
+
+func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string][]string) {
+	return parseBlockOpts(lines, baseDir, sourceFile, parseBlockOptions{})
 }
 
 // stripComments удаляет комментарии из строки конфигурации.
@@ -78,8 +86,8 @@ func parseUpstreamBlockLines(blockLines []string) ([]string, []DirectiveOption) 
 	return servers, options
 }
 
-// parseBlock рекурсивно разбирает блок конфигурации.
-func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string][]string) {
+// parseBlockOpts рекурсивно разбирает блок конфигурации.
+func parseBlockOpts(lines []string, baseDir, sourceFile string, opts parseBlockOptions) ([]Node, map[string][]string) {
 	var directives []Node
 	upstreams := make(map[string][]string)
 	i := 0
@@ -92,6 +100,10 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 		}
 
 		if strings.HasPrefix(line, "include ") {
+			if opts.skipIncludes {
+				i++
+				continue
+			}
 			pattern := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "include "), ";"))
 			if !filepath.IsAbs(pattern) {
 				pattern = filepath.Join(baseDir, pattern)
@@ -103,7 +115,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 					continue
 				}
 				incDir := filepath.Dir(incPath)
-				incDirectives, incUpstreams := parseBlock(incLines, incDir, incPath)
+				incDirectives, incUpstreams := parseBlockOpts(incLines, incDir, incPath, opts)
 				directives = append(directives, incDirectives...)
 				for k, v := range incUpstreams {
 					upstreams[k] = append(upstreams[k], v...)
@@ -141,7 +153,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 			if inline != "" {
 				blockLines = append([]string{inline}, blockLines...)
 			}
-			subDirectives, subUpstreams := parseBlock(blockLines, baseDir, sourceFile)
+			subDirectives, subUpstreams := parseBlockOpts(blockLines, baseDir, sourceFile, opts)
 			directives = append(directives, Node{
 				Block: "location", LocModifier: mod, Arg: path,
 				Directives: subDirectives, File: sourceFile, Line: blockStartLine,
@@ -164,7 +176,7 @@ func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string]
 			if inline != "" {
 				blockLines = append([]string{inline}, blockLines...)
 			}
-			subDirectives, subUpstreams := parseBlock(blockLines, baseDir, sourceFile)
+			subDirectives, subUpstreams := parseBlockOpts(blockLines, baseDir, sourceFile, opts)
 			node := Node{
 				Block:      blockName,
 				Arg:        blockArg,

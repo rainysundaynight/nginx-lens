@@ -1,6 +1,10 @@
 package analyzer
 
-import "github.com/rainysundaynight/nginx-lens/internal/parser"
+import (
+	"strconv"
+
+	"github.com/rainysundaynight/nginx-lens/internal/parser"
+)
 
 // ---------- Агрегация анализа ----------
 // Сбор всех результатов статического анализа.
@@ -40,6 +44,26 @@ type Issue struct {
 	File        string   `json:"file,omitempty"`
 	Line        int      `json:"line,omitempty"`
 	FixHint     string   `json:"fix_hint,omitempty"`
+}
+
+// IssueDedupeKey ключ для дедупликации одинаковых issues.
+func IssueDedupeKey(i Issue) string {
+	return i.Type + "\x00" + i.File + "\x00" + strconv.Itoa(i.Line) + "\x00" + i.Description
+}
+
+// DedupeIssues удаляет повторяющиеся issues (например после двойного include).
+func DedupeIssues(issues []Issue) []Issue {
+	seen := make(map[string]struct{}, len(issues))
+	out := make([]Issue, 0, len(issues))
+	for _, iss := range issues {
+		key := IssueDedupeKey(iss)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, iss)
+	}
+	return out
 }
 
 // CollectIssues собирает все issues в единый список.
@@ -92,5 +116,5 @@ func CollectIssues(result AnalysisResult) []Issue {
 	for _, d := range result.DeadLocations {
 		add("dead_location", d.Location.Arg, d.Location.File, d.Location.Line)
 	}
-	return issues
+	return DedupeIssues(issues)
 }

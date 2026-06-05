@@ -108,6 +108,28 @@ func TestBuildDependencyGraph(t *testing.T) {
 	}
 }
 
+func TestCollectIssuesDedupes(t *testing.T) {
+	tree := parser.NewConfigTree([]parser.Node{
+		{Block: "server", File: "a.conf", Line: 5, Directives: []parser.Node{{Directive: "listen", Args: "80"}}},
+		{Block: "server", File: "a.conf", Line: 5, Directives: []parser.Node{{Directive: "listen", Args: "80"}}},
+	}, nil)
+	issues := CollectIssues(RunAnalysis(tree))
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 unique issues, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestDedupeIssues(t *testing.T) {
+	in := []Issue{
+		{Type: "dead_location", Description: "/", File: "a.conf", Line: 4, Severity: SeverityLow},
+		{Type: "dead_location", Description: "/", File: "a.conf", Line: 4, Severity: SeverityLow},
+	}
+	out := DedupeIssues(in)
+	if len(out) != 1 {
+		t.Fatalf("got %d want 1", len(out))
+	}
+}
+
 func TestShouldIncludeIssueFilter(t *testing.T) {
 	opts := FilterOptions{MinSeverity: SeverityHigh, SkipTypes: map[string]struct{}{"x": {}}}
 	if ShouldIncludeIssue("x", SeverityHigh, opts) {

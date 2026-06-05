@@ -28,15 +28,16 @@ func ParseExpanded(configPath, nginxPath string) (*ConfigTree, error) {
 // ParseExpandedOutput парсит вывод nginx -T.
 func ParseExpandedOutput(output string) (*ConfigTree, error) {
 	sections := splitExpandedSections(output)
+	expandedOpts := parseBlockOptions{skipIncludes: true}
 	if len(sections) == 0 {
 		lines := strings.Split(output, "\n")
-		directives, upstreams := parseBlock(lines, "", "")
+		directives, upstreams := parseBlockOpts(lines, "", "", expandedOpts)
 		return NewConfigTree(directives, upstreams), nil
 	}
 	var allDirectives []Node
 	allUpstreams := make(map[string][]string)
 	for file, lines := range sections {
-		directives, upstreams := parseBlock(lines, "", file)
+		directives, upstreams := parseBlockOpts(lines, "", file, expandedOpts)
 		allDirectives = append(allDirectives, directives...)
 		for k, v := range upstreams {
 			allUpstreams[k] = append(allUpstreams[k], v...)
