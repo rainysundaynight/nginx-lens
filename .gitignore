@@ -1,0 +1,27 @@
+# Go
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+coverage.out
+coverage.xml
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# venv / pytest (локальные инструменты)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/

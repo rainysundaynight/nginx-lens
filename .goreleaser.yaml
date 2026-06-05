@@ -1,0 +1,65 @@
+# ---------- GoReleaser ----------
+# Единый архив на платформу: nginx-lens + agent + hub.
+
+version: 2
+project_name: nginx-lens
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: nginx-lens
+    main: ./cmd/nginx-lens
+    binary: nginx-lens
+    ldflags:
+      - -s -w
+      - -X github.com/rainysundaynight/nginx-lens/internal/version.Version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+  - id: nginx-lens-agent
+    main: ./cmd/nginx-lens-agent
+    binary: nginx-lens-agent
+    ldflags:
+      - -s -w
+      - -X github.com/rainysundaynight/nginx-lens/internal/version.Version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+  - id: nginx-lens-hub
+    main: ./cmd/nginx-lens-hub
+    binary: nginx-lens-hub
+    ldflags:
+      - -s -w
+      - -X github.com/rainysundaynight/nginx-lens/internal/version.Version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: bundle
+    builds:
+      - nginx-lens
+      - nginx-lens-agent
+      - nginx-lens-hub
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - example-config.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+
+release:
+  github:
+    owner: rainysundaynight
+    name: nginx-lens

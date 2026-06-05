@@ -1,0 +1,157 @@
+# =============================================================================
+# Конфигурация nginx-lens
+# Путь по умолчанию: /opt/nginx-lens/config.yaml
+# Переопределение: export NGINX_LENS_CONFIG=/path/to/config.yaml
+# Создание: sudo nginx-lens init  |  пользовательский: nginx-lens init --user
+# =============================================================================
+
+# --- Общие настройки ---
+# defaults.nginx_config_path — путь к nginx.conf (на хосте или через docker.volume_map)
+defaults:
+  nginx_config_path: /etc/nginx/nginx.conf
+  timeout: 3.0
+  retries: 2
+  mode: tcp
+  max_workers: 20
+  dns_cache_ttl: 300
+  top: 10
+
+# --- Docker (nginx в контейнере) ---
+# enabled: auto — detect контейнера; true — принудительно; false — только хост
+docker:
+  enabled: auto
+  container: ""
+  binary: docker
+  config_inside: /etc/nginx/nginx.conf
+  volume_map: {}
+
+# --- Парсер конфигурации ---
+# mode: auto | expanded (nginx -T) | regex
+parser:
+  mode: auto
+  nginx_path: nginx
+
+# --- Формат вывода ---
+# table | json | yaml | csv | prometheus
+output:
+  colors: true
+  format: table
+
+# --- DNS-кэш ---
+cache:
+  enabled: true
+  ttl: 300
+
+# --- Анализ ---
+syntax:
+  skip_warns: false
+  nginx_path: nginx
+
+analyze:
+  min_severity: low
+  skip_types: []
+  skip_low: false
+  skip_medium: false
+
+route:
+  url: http://example.com/api/v1/users
+
+explain:
+  url: http://example.com/api/v1/users
+
+blast_radius:
+  upstream_name: api_backend
+
+certs:
+  warn_days: 30
+  fail_on_expired: false
+
+policy:
+  packs:
+    - security-baseline
+    - mozilla-ssl
+  rules: []
+  policy_only: false
+
+score:
+  enabled: true
+
+k8s:
+  manifests_path: /path/to/k8s/manifests
+
+# --- CI / Validate ---
+validate:
+  skip_syntax: false
+  skip_analysis: false
+  skip_upstream: false
+  skip_dns: true
+  skip_certs: false
+  skip_policy: false
+  skip_warns: false
+  fail_on: high
+  fail_on_low: false
+  nginx_path: nginx
+
+# --- Upstream / Health ---
+health:
+  with_resolve: false
+  skip_exit_on_unhealthy: false
+  skip_cache: false
+
+resolve:
+  skip_cache: false
+
+upstreams:
+  name: ""
+  health: false
+  skip_health: false
+  health_by_default: false
+
+dynamic_upstream:
+  enabled: false
+  api_url: http://127.0.0.1:6000/dynamic
+  timeout: 2.0
+
+# --- Логи ---
+logs:
+  path: /var/log/nginx/access.log
+  error_path: /var/log/nginx/error.log
+  top: 20
+  since: ""
+  until: ""
+  status: ""
+  skip_anomalies: true
+  format_regex: ""
+  tail_lines: 50000
+
+# --- Визуализация ---
+diff:
+  config1: /etc/nginx/nginx.conf
+  config2: /etc/nginx/nginx.conf.bak
+
+metrics:
+  compare_path: ""
+  prometheus: false
+
+include_tree:
+  directive: ""
+
+tree:
+  format: text
+
+# --- Web: agent + hub ---
+web:
+  agent:
+    host: 0.0.0.0
+    port: 8088
+    token: ""
+  hub:
+    host: 0.0.0.0
+    port: 8089
+    token: ""
+    agent_token: ""
+    agents:
+      - http://localhost:8088
+    cors_origins:
+      - "*"
+    refresh_interval: 30

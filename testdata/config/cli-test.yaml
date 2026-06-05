@@ -1,0 +1,56 @@
+defaults:
+  nginx_config_path: testdata/nginx/minimal.conf
+  timeout: 3.0
+  mode: tcp
+
+docker:
+  enabled: false
+
+parser:
+  mode: regex
+  nginx_path: nginx
+
+output:
+  colors: false
+  format: json
+
+validate:
+  skip_syntax: true
+  skip_upstream: true
+  skip_dns: true
+  skip_certs: true
+  skip_policy: false
+  fail_on: high
+
+analyze:
+  min_severity: low
+
+route:
+  url: http://example.com/api
+
+explain:
+  url: http://example.com/api
+
+diff:
+  config1: testdata/nginx/minimal.conf
+  config2: testdata/nginx/minimal-v2.conf
+
+policy:
+  packs:
+    - security-baseline
+  rules: []
+
+score:
+  enabled: true
+
+certs:
+  warn_days: 30
+
+blast_radius:
+  upstream_name: api_backend
+
+k8s:
+  manifests_path: testdata/k8s
+
+tree:
+  format: markdown

@@ -1,0 +1,50 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/rainysundaynight/nginx-lens/internal/analyzer"
+	"github.com/rainysundaynight/nginx-lens/internal/export"
+	"github.com/rainysundaynight/nginx-lens/internal/k8s"
+	"github.com/spf13/cobra"
+)
+
+func newIngressAuditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ingress-audit",
+		Short: "Аудит K8s Ingress vs nginx server_name (настройки: k8s.manifests_path)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := requireConfig()
+			if err != nil {
+				return err
+			}
+			if err := requireNonEmpty("k8s.manifests_path", cfg.K8s.ManifestsPath); err != nil {
+				return err
+			}
+			tree, err := parseConfigFromCfg(cfg)
+			if err != nil {
+				return err
+			}
+			var serverNames []string
+			for _, item := range analyzer.Walk(tree) {
+				if item.Node.Directive == "server_name" {
+					serverNames = append(serverNames, strings.Fields(item.Node.Args)...)
+				}
+			}
+			issues, rules := k8s.AuditIngressManifests(cfg.K8s.ManifestsPath, k8s.CollectServerNames(serverNames))
+			out := map[string]interface{}{"issues": issues, "rules": rules}
+			switch outputFormat(cfg) {
+			case "json":
+				return export.PrintJSON(out)
+			case "yaml":
+				return export.PrintYAML(out)
+			}
+			fmt.Printf("Ingress rules: %d, issues: %d\n", len(rules), len(issues))
+			for _, iss := range issues {
+				fmt.Printf("[%s] %s %s — %s\n", iss.Type, iss.Host, iss.Path, iss.Message)
+			}
+			return nil
+		},
+	}
+}
