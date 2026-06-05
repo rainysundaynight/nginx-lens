@@ -26,6 +26,14 @@ type AccessSnapshot struct {
 	Status5xx     int                       `json:"status_5xx"`
 	WindowSeconds float64                   `json:"window_seconds"`
 	ByUpstream    map[string]UpstreamAccess `json:"by_upstream,omitempty"`
+	ByPath        map[string]PathAccess     `json:"by_path,omitempty"`
+}
+
+// PathAccess — метрики access по URI (запросы без upstream_addr в логе).
+type PathAccess struct {
+	Requests  int `json:"requests"`
+	Status5xx int `json:"status_5xx"`
+	Status502 int `json:"status_502"`
 }
 
 // UpstreamAccess — метрики access по upstream.
@@ -153,7 +161,7 @@ func normalizeUpstreamAddr(addr string) string {
 }
 
 func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
-	snap := &AccessSnapshot{ByUpstream: make(map[string]UpstreamAccess)}
+	snap := &AccessSnapshot{ByUpstream: make(map[string]UpstreamAccess), ByPath: make(map[string]PathAccess)}
 	if len(lines) == 0 {
 		return snap
 	}
@@ -162,6 +170,7 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 	var rts []float64
 	upRT := make(map[string][]float64)
 	upCounts := make(map[string]*struct{ req, s5, s502 int })
+	pathDirect := make(map[string]*struct{ req, s5, s502 int })
 
 	for _, l := range lines {
 		if l.Status == 404 {
@@ -198,6 +207,21 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 		if l.ResponseTime > 0 {
 			upRT[upKey] = append(upRT[upKey], l.ResponseTime)
 		}
+		if l.Upstream == "" {
+			path := normalizeAccessPath(l.Path)
+			if path != "" {
+				if pathDirect[path] == nil {
+					pathDirect[path] = &struct{ req, s5, s502 int }{}
+				}
+				pathDirect[path].req++
+				if l.Status >= 500 {
+					pathDirect[path].s5++
+				}
+				if l.Status == 502 {
+					pathDirect[path].s502++
+				}
+			}
+		}
 	}
 	if !minT.IsZero() && !maxT.IsZero() {
 		snap.WindowSeconds = maxT.Sub(minT).Seconds()
@@ -217,12 +241,23 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 			ua.ErrorPct = math.Round(float64(c.s5)/float64(c.req)*1000) / 10
 		}
 		ua.P95Latency = percentile(upRT[name], 0.95)
-		if name == "_direct" {
-			continue
-		}
 		snap.ByUpstream[name] = ua
 	}
+	for path, c := range pathDirect {
+		snap.ByPath[path] = PathAccess{Requests: c.req, Status5xx: c.s5, Status502: c.s502}
+	}
 	return snap
+}
+
+func normalizeAccessPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if idx := strings.Index(path, "?"); idx >= 0 {
+		path = path[:idx]
+	}
+	return path
 }
 
 func percentile(vals []float64, p float64) float64 {

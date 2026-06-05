@@ -98,12 +98,16 @@ func newLogsCmd() *cobra.Command {
 			st := newStyler(cfg)
 			printSection(st, "Access & error logs")
 			if snap, ok := report["access_snapshot"].(*logs.AccessSnapshot); ok {
+				p95 := fmt.Sprintf("%.1f ms", snap.P95Latency)
+				if snap.P95Latency == 0 && snap.TotalRequests > 0 {
+					p95 = "n/a (нет $request_time в log_format)"
+				}
 				printKVTable(st, [][2]string{
 					{"Access requests", fmt.Sprintf("%d", snap.TotalRequests)},
 					{"RPS", fmt.Sprintf("%.2f", snap.RPS)},
 					{"404", fmt.Sprintf("%d", snap.Status404)},
 					{"5xx", fmt.Sprintf("%d", snap.Status5xx)},
-					{"P95 latency", fmt.Sprintf("%.1f ms", snap.P95Latency)},
+					{"P95 latency", p95},
 				})
 			}
 			if errStats, ok := report["error"].(*logs.ErrorStats); ok {

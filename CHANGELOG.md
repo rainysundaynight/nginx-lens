@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.4] — 2026-06-05
+
+### Fixed
+
+- Correlations: 5xx из access.log без `$upstream_addr` теперь привязываются к upstream по URI через dependency graph (path → location)
+- Резолв upstream из error.log для адресов вида `http://127.0.0.1:80/`
+- Hub ERRORS: показывается логическое имя upstream и текст ошибки, а не сырой URL
+- CLI logs: P95 latency помечается как n/a, если в log_format нет `$request_time`
+
 ## [1.1.3] — 2026-06-05
 
 ### Fixed

@@ -62,6 +62,7 @@ func addressKeys(raw string) []string {
 		stripped = strings.TrimPrefix(stripped, p)
 	}
 	add(stripped)
+	add(strings.TrimSuffix(stripped, "/"))
 	if h, p, ok := strings.Cut(stripped, ":"); ok {
 		add(h + ":" + p)
 		add(h)

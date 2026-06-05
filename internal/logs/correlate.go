@@ -23,6 +23,8 @@ type UpstreamCorrelation struct {
 	ErrorTotal     int      `json:"error_total"`
 }
 
+type accessAgg struct{ req, s5, s502 int }
+
 // BuildCorrelations строит отчёт access + error по логическим upstream.
 func BuildCorrelations(
 	access *AccessSnapshot,
@@ -68,10 +70,12 @@ func BuildCorrelations(
 		byName[name] = c
 	}
 
-	type accessAgg struct{ req, s5, s502 int }
 	accessByName := make(map[string]*accessAgg)
 	if access != nil && access.ByUpstream != nil {
 		for k, v := range access.ByUpstream {
+			if k == "_direct" {
+				continue
+			}
 			name := ResolveLogicalUpstream(k, index)
 			a := accessByName[name]
 			if a == nil {
@@ -81,6 +85,17 @@ func BuildCorrelations(
 			a.req += v.Requests
 			a.s5 += v.Status5xx
 			a.s502 += v.Status502
+		}
+		if direct, ok := access.ByUpstream["_direct"]; ok && direct.Requests > 0 {
+			attributed := attributeDirectAccessByGraph(access.ByPath, graph, accessByName)
+			if attributed.Req < direct.Requests && len(upstreams) == 1 {
+				for name := range upstreams {
+					mergeAccessAgg(accessByName, name,
+						direct.Requests-attributed.Req,
+						direct.Status5xx-attributed.S5,
+						direct.Status502-attributed.S502)
+				}
+			}
 		}
 	}
 	for name, a := range accessByName {
@@ -168,4 +183,62 @@ func collectLogicalNames(upstreams map[string][]string, index map[string]string,
 		}
 	}
 	return names
+}
+
+func mergeAccessAgg(m map[string]*accessAgg, name string, req, s5, s502 int) {
+	if req == 0 && s5 == 0 && s502 == 0 {
+		return
+	}
+	a := m[name]
+	if a == nil {
+		a = &accessAgg{}
+		m[name] = a
+	}
+	a.req += req
+	a.s5 += s5
+	a.s502 += s502
+}
+
+type directAttributed struct{ Req, S5, S502 int }
+
+func attributeDirectAccessByGraph(byPath map[string]PathAccess, graph map[string][]analyzer.BlastRadiusEntry, accessByName map[string]*accessAgg) directAttributed {
+	var total directAttributed
+	if len(byPath) == 0 || len(graph) == 0 {
+		return total
+	}
+	type pathUp struct{ up, path string }
+	seen := make(map[pathUp]struct{})
+	for upName, entries := range graph {
+		for _, e := range entries {
+			loc := e.Location
+			if loc == "" {
+				loc = "/"
+			}
+			for path, pa := range byPath {
+				if !pathMatchesLocation(path, loc) {
+					continue
+				}
+				key := pathUp{up: upName, path: path}
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				mergeAccessAgg(accessByName, upName, pa.Requests, pa.Status5xx, pa.Status502)
+				total.Req += pa.Requests
+				total.S5 += pa.Status5xx
+				total.S502 += pa.Status502
+			}
+		}
+	}
+	return total
+}
+
+func pathMatchesLocation(path, location string) bool {
+	if location == "" || location == "/" {
+		return path == "/" || strings.HasPrefix(path, "/")
+	}
+	if path == location {
+		return true
+	}
+	return strings.HasPrefix(path, location+"/")
 }

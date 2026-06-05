@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/rainysundaynight/nginx-lens/internal/logs"
 )
 
 // ---------- View-модели Hub UI ----------
@@ -568,6 +570,7 @@ func parseErrors(raw map[string]interface{}) []HubErrorRow {
 	if es == nil {
 		return nil
 	}
+	index := logs.BuildUpstreamIndex(rawUpstreams(raw))
 	arr, _ := es["upstream_errors"].([]interface{})
 	var rows []HubErrorRow
 	for _, e := range arr {
@@ -575,13 +578,36 @@ func parseErrors(raw map[string]interface{}) []HubErrorRow {
 		if m == nil {
 			continue
 		}
+		upRaw := stringVal(m["upstream"])
+		upName := logs.ResolveLogicalUpstream(upRaw, index)
+		if upName == "" {
+			upName = upRaw
+		}
+		msg := stringVal(m["message"])
+		if msg == "" || msg == "upstream errors" {
+			msg = fmt.Sprintf("%d upstream error(s)", int(floatVal(m["count"])))
+		}
 		rows = append(rows, HubErrorRow{
 			Time:    time.Now().Format("15:04:05"),
 			Code:    "ERR",
-			Message: fmt.Sprintf("%s: %d", stringVal(m["upstream"]), int(floatVal(m["count"]))),
+			Message: fmt.Sprintf("%s · %s", upName, msg),
 		})
 	}
 	return rows
+}
+
+func rawUpstreams(raw map[string]interface{}) map[string][]string {
+	src, _ := raw["upstreams"].(map[string]interface{})
+	out := make(map[string][]string, len(src))
+	for name, val := range src {
+		arr, _ := val.([]interface{})
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				out[name] = append(out[name], s)
+			}
+		}
+	}
+	return out
 }
 
 func buildCorrelations(item map[string]interface{}, snap HubSnapshot) []HubCorrelation {

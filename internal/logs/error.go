@@ -58,6 +58,7 @@ func parseErrorReader(reader io.Reader) (*ErrorStats, error) {
 		UpstreamTimeout: make(map[string]int),
 	}
 	upstreamCounts := make(map[string]int)
+	upstreamSample := make(map[string]string)
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -69,6 +70,9 @@ func parseErrorReader(reader io.Reader) (*ErrorStats, error) {
 		if m := reUpstreamHost.FindStringSubmatch(line); m != nil {
 			upHost = m[1]
 			upstreamCounts[upHost]++
+			if _, ok := upstreamSample[upHost]; !ok {
+				upstreamSample[upHost] = trimErrorMessage(line)
+			}
 		}
 		if reUpstreamConnect.MatchString(line) {
 			stats.ConnectFailed++
@@ -87,9 +91,24 @@ func parseErrorReader(reader io.Reader) (*ErrorStats, error) {
 		}
 	}
 	for up, cnt := range upstreamCounts {
-		stats.UpstreamErrors = append(stats.UpstreamErrors, ErrorEntry{Upstream: up, Message: "upstream errors", Count: cnt})
+		msg := upstreamSample[up]
+		if msg == "" {
+			msg = "upstream errors"
+		}
+		stats.UpstreamErrors = append(stats.UpstreamErrors, ErrorEntry{Upstream: up, Message: msg, Count: cnt})
 	}
 	return stats, scanner.Err()
+}
+
+func trimErrorMessage(line string) string {
+	line = strings.TrimSpace(line)
+	if idx := strings.Index(line, "] "); idx >= 0 {
+		line = strings.TrimSpace(line[idx+2:])
+	}
+	if len(line) > 160 {
+		line = line[:160] + "…"
+	}
+	return line
 }
 
 func openLogFile(path string) (io.Reader, func(), error) {

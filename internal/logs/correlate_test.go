@@ -44,6 +44,47 @@ func TestBuildCorrelationsPerUpstreamErrors(t *testing.T) {
 	}
 }
 
+func TestBuildCorrelationsDirectPath(t *testing.T) {
+	access := &AccessSnapshot{
+		TotalRequests: 383,
+		Status5xx:     383,
+		ByUpstream: map[string]UpstreamAccess{
+			"_direct": {Requests: 383, Status5xx: 383, Status502: 383},
+		},
+		ByPath: map[string]PathAccess{
+			"/": {Requests: 383, Status5xx: 383, Status502: 383},
+		},
+	}
+	errors := &ErrorStats{
+		UpstreamErrors: []ErrorEntry{{Upstream: "http://127.0.0.1:80/", Count: 1}},
+	}
+	ups := map[string][]string{"test": {"127.0.0.1:80"}}
+	graph := map[string][]analyzer.BlastRadiusEntry{
+		"test": {{Location: "/", ProxyPass: "http://test"}},
+	}
+	cors := BuildCorrelations(access, errors, graph, ups, nil)
+	if len(cors) != 1 {
+		t.Fatalf("expected 1 correlation, got %d", len(cors))
+	}
+	c := cors[0]
+	if c.Upstream != "test" {
+		t.Fatalf("upstream=%s", c.Upstream)
+	}
+	if c.AccessRequests != 383 || c.Access5xxPct < 99.9 {
+		t.Fatalf("access=%d pct=%f", c.AccessRequests, c.Access5xxPct)
+	}
+	if c.ErrorTotal != 1 {
+		t.Fatalf("errors=%d", c.ErrorTotal)
+	}
+}
+
+func TestResolveLogicalUpstreamTrailingSlash(t *testing.T) {
+	idx := BuildUpstreamIndex(map[string][]string{"test": {"127.0.0.1:80"}})
+	if got := ResolveLogicalUpstream("http://127.0.0.1:80/", idx); got != "test" {
+		t.Fatalf("got %q want test", got)
+	}
+}
+
 func TestBuildCorrelationsStreamLocations(t *testing.T) {
 	stream := upstream.StreamGraph{
 		"tcp_up": {{Listen: "9000", UpstreamName: "tcp_up"}},
