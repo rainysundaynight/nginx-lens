@@ -18,10 +18,3 @@ coverage.xml
 
 # Logs
 *.log
-
-# venv / pytest (локальные инструменты)
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/

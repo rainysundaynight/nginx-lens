@@ -4,6 +4,8 @@
 
 ### Releases (рекомендуется)
 
+Go-бинарники: `nginx-lens`, `nginx-lens-agent`, `nginx-lens-hub`. PyPI не используется.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rainysundaynight/nginx-lens/main/install-nginx-lens.sh | bash
 ```

@@ -1,8 +1,10 @@
 # nginx-lens
 
-CLI-инструмент для анализа, визуализации и диагностики конфигураций Nginx.
-
+CLI-инструмент для анализа, визуализации и диагностики конфигураций Nginx (Go).  
 Все настройки — в `config.yaml`. Команды вызываются без аргументов.
+
+> **Установка:** только Go-бинарники с [GitHub Releases](https://github.com/rainysundaynight/nginx-lens/releases).  
+> PyPI / `pip install` — устаревшая Python-версия, больше не поддерживается.
 
 ## Установка
 
@@ -17,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/rainysundaynight/nginx-lens/main/in
 Конкретная версия:
 
 ```bash
-NGINX_LENS_VERSION=2.3.0 curl -fsSL https://raw.githubusercontent.com/rainysundaynight/nginx-lens/main/install-nginx-lens.sh | bash
+NGINX_LENS_VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/rainysundaynight/nginx-lens/main/install-nginx-lens.sh | bash
 ```
 
 **Windows (PowerShell):**
@@ -39,7 +41,7 @@ irm https://raw.githubusercontent.com/rainysundaynight/nginx-lens/main/install.p
 В архиве: `nginx-lens`, `nginx-lens-agent`, `nginx-lens-hub`, `example-config.yaml`.
 
 ```bash
-tar xzf nginx-lens_2.3.0_Linux_amd64.tar.gz
+tar xzf nginx-lens_1.0.0_Linux_amd64.tar.gz
 sudo install nginx-lens nginx-lens-agent nginx-lens-hub /usr/local/bin/
 sudo nginx-lens init
 ```

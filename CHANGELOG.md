@@ -13,6 +13,7 @@
 
 ### Changed
 
+- Проект полностью на Go; PyPI / `pip install` больше не поддерживается
 - Обновлена документация: `docs/README.md`, `docs/guide.md`, сокращён справочник конфигурации
 - Install scripts и README указывают на `main` и GitHub Releases
 
