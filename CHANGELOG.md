@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.2] — 2026-06-05
+
+### Added
+
+- Предупреждение `server_tokens_off_missing` (severity: high), если `server_tokens off` не задан на уровне http или server
+
+### Fixed
+
+- Ложный `ssl_protocols_weak` на конфигурациях с `TLSv1.2 TLSv1.3` (substring `TLSv1`)
+- Ложный `listen_443_no_ssl` / `listen_443_no_http2` для портов вроде `8443` (substring `443`)
+- Ложный `ssl_ciphers_weak` при исключениях вида `!MD5` в `ssl_ciphers`
+- Ложный `listen_servername_conflict` для `listen 80` и `listen [::]:80` с одним `server_name`
+- Ложный location conflict между `/` и дочерними path (`/api`)
+- Dead location: учёт server scope и prefix-match без лишнего `/`
+- Wildcard-сертификат `*.example.com` покрывает apex `example.com`
+- Rate-limit policy не срабатывает, если `limit_req_zone` / `limit_conn_zone` уже определены
+- Score/hub summary синхронизированы с policy, cert и module issues через единый список issues
+
 ## [1.1.1] — 2026-06-05
 
 ### Fixed

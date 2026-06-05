@@ -27,8 +27,18 @@ func loadFixtureTree(t *testing.T, name string) *parser.ConfigTree {
 func TestRunAnalysisMinimal(t *testing.T) {
 	tree := loadFixtureTree(t, "minimal.conf")
 	result := RunAnalysis(tree)
-	if len(result.LocationConflicts) == 0 {
-		t.Fatal("expected location conflicts in minimal fixture")
+	if len(result.LocationConflicts) != 0 {
+		t.Fatalf("unexpected location conflicts for / and =/api: %v", result.LocationConflicts)
+	}
+	treeNested := parser.NewConfigTree([]parser.Node{{
+		Block: "server",
+		Directives: []parser.Node{
+			{Block: "location", Arg: "/api"},
+			{Block: "location", Arg: "/api/v1"},
+		},
+	}}, nil)
+	if len(FindLocationConflicts(treeNested)) == 0 {
+		t.Fatal("expected /api vs /api/v1 conflict")
 	}
 }
 
@@ -81,7 +91,7 @@ server {
 func TestComputeScore(t *testing.T) {
 	tree := loadFixtureTree(t, "minimal.conf")
 	result := RunAnalysis(tree)
-	report := ComputeScore(result, 2, 1)
+	report := ComputeScoreFromIssues(CollectIssues(result), 0)
 	if report.Total <= 0 || report.Total > 100 {
 		t.Fatalf("score=%v", report.Total)
 	}

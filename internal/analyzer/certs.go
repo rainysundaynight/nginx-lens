@@ -153,6 +153,10 @@ func hostMatchesWildcard(host, wildcard string) bool {
 	if !strings.HasPrefix(wildcard, "*.") {
 		return host == wildcard
 	}
+	base := wildcard[2:]
+	if host == base {
+		return true
+	}
 	suffix := wildcard[1:]
 	return strings.HasSuffix(host, suffix) && strings.Count(host, ".") >= strings.Count(suffix, ".")
 }

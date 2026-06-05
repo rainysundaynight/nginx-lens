@@ -55,10 +55,7 @@ func CollectSnapshot() (*Snapshot, error) {
 	engine := policy.NewEngine(cfg.Policy.Packs, policyRulesFromCfg(cfg))
 	policyIssues := engine.Run(tree)
 	for _, pi := range policyIssues {
-		analyzeExport.Issues = append(analyzeExport.Issues, analyzer.Issue{
-			Type: pi.Type, Description: pi.Message, Severity: pi.Severity,
-			File: pi.File, Line: pi.Line, FixHint: pi.FixHint,
-		})
+		export.AppendIssue(&analyzeExport, issueFromPolicy(pi), filter)
 	}
 
 	upstreams := tree.GetUpstreams()
@@ -82,13 +79,10 @@ func CollectSnapshot() (*Snapshot, error) {
 		warnDays = 30
 	}
 	certIssues := analyzer.AuditCertificates(tree, warnDays, cfg.Docker.VolumeMap)
-	certHigh := 0
 	for _, c := range certIssues {
-		if c.Severity == analyzer.SeverityHigh {
-			certHigh++
-		}
+		export.AppendIssue(&analyzeExport, issueFromCert(c), filter)
 	}
-	score := analyzer.ComputeScore(result, len(policyIssues), certHigh)
+
 	depGraph := analyzer.BuildDependencyGraph(tree)
 
 	tailLines := cfg.Logs.TailLines
@@ -116,12 +110,14 @@ func CollectSnapshot() (*Snapshot, error) {
 		if mi.Module == "nginx_build" {
 			continue
 		}
-		analyzeExport.Issues = append(analyzeExport.Issues, analyzer.Issue{
+		export.AppendIssue(&analyzeExport, analyzer.Issue{
 			Type: "missing_nginx_module", Description: mi.Message, Severity: analyzer.SeverityHigh,
-			FixHint: "Пересоберите nginx с модулем " + mi.Module + " или удалите директиву " + mi.Directive,
-		})
-		analyzeExport.Summary["high"]++
+			Solution: "Пересоберите nginx с нужным модулем или удалите директиву.",
+			FixHint:  "Пересоберите nginx с модулем " + mi.Module + " или удалите директиву " + mi.Directive,
+		}, filter)
 	}
+
+	score := analyzer.ComputeScoreFromIssues(analyzeExport.Issues, 0)
 
 	correlations := logs.BuildCorrelations(accessStats, errorStats, depGraph, upstreams, streamGraph)
 
@@ -159,4 +155,24 @@ func policyRulesFromCfg(cfg config.Config) []policy.CustomRule {
 		})
 	}
 	return rules
+}
+
+func issueFromPolicy(pi policy.Issue) analyzer.Issue {
+	iss := analyzer.Issue{
+		Type: pi.Type, Description: pi.Message, Severity: pi.Severity,
+		File: pi.File, Line: pi.Line, FixHint: pi.FixHint,
+	}
+	if meta, ok := analyzer.DefaultIssueMeta[pi.Type]; ok {
+		iss.Solution = meta.Solution
+	} else {
+		iss.Solution = pi.Message
+	}
+	return iss
+}
+
+func issueFromCert(c analyzer.CertIssue) analyzer.Issue {
+	return analyzer.Issue{
+		Type: c.Type, Description: c.Message, Severity: c.Severity,
+		File: c.File, FixHint: c.FixHint, Solution: c.Message,
+	}
 }

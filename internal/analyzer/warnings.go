@@ -45,7 +45,8 @@ var limits = map[string]limitRange{
 // FindWarnings находит потенциально опасные директивы и нарушения best practices.
 func FindWarnings(tree *parser.ConfigTree) []Warning {
 	var warnings []Warning
-	foundHeaders := make(map[string]struct{})
+	ctx := collectConfigContext(tree)
+	sslHeaders := make(map[string]map[string]struct{})
 
 	for _, item := range Walk(tree) {
 		d := item.Node
@@ -62,8 +63,8 @@ func FindWarnings(tree *parser.ConfigTree) []Warning {
 		if d.Block == "if" {
 			warnings = append(warnings, Warning{Type: "if_block", Directive: "if", Context: parent, Value: ""})
 		}
-		if d.Directive == "server_tokens" && strings.TrimSpace(d.Args) == "on" {
-			warnings = append(warnings, Warning{Type: "server_tokens_on", Directive: "server_tokens", Context: parent, Value: "on"})
+		if d.Block == "server" && !serverTokensEffectiveOff(d, ctx) {
+			warnings = append(warnings, Warning{Type: "server_tokens_off_missing", Directive: "server_tokens", Context: &d, Value: "off"})
 		}
 		if d.Directive == "ssl_certificate" || d.Directive == "ssl_certificate_key" {
 			if strings.TrimSpace(d.Args) == "" {
@@ -71,30 +72,27 @@ func FindWarnings(tree *parser.ConfigTree) []Warning {
 			}
 		}
 		if d.Directive == "ssl_protocols" {
-			if strings.Contains(d.Args, "TLSv1") || strings.Contains(d.Args, "TLSv1.1") {
+			if HasWeakTLSProtocols(d.Args) {
 				warnings = append(warnings, Warning{Type: "ssl_protocols_weak", Directive: "ssl_protocols", Context: parent, Value: d.Args})
 			}
 		}
-		if d.Directive == "ssl_ciphers" {
-			for _, weak := range []string{"RC4", "MD5", "DES"} {
-				if strings.Contains(d.Args, weak) {
-					warnings = append(warnings, Warning{Type: "ssl_ciphers_weak", Directive: "ssl_ciphers", Context: parent, Value: d.Args})
-					break
-				}
-			}
+		if d.Directive == "ssl_ciphers" && HasWeakSSLCiphers(d.Args) {
+			warnings = append(warnings, Warning{Type: "ssl_ciphers_weak", Directive: "ssl_ciphers", Context: parent, Value: d.Args})
 		}
-		if d.Directive == "listen" && strings.Contains(d.Args, "443") && !strings.Contains(d.Args, "ssl") {
+		if d.Directive == "listen" && ListenPortIs443(d.Args) && !ListenHasSSL(d.Args) {
 			warnings = append(warnings, Warning{Type: "listen_443_no_ssl", Directive: "listen", Context: parent, Value: d.Args})
 		}
-		if d.Directive == "listen" && strings.Contains(d.Args, "443") && !strings.Contains(d.Args, "http2") {
+		if d.Directive == "listen" && ListenPortIs443(d.Args) && ListenHasSSL(d.Args) && !strings.Contains(d.Args, "http2") {
 			warnings = append(warnings, Warning{Type: "listen_443_no_http2", Directive: "listen", Context: parent, Value: d.Args})
 		}
-		if d.Block == "server" {
-			hasLimit := false
-			for _, sub := range WalkNodes(d.Directives, &d) {
-				if sub.Node.Directive == "limit_req" || sub.Node.Directive == "limit_conn" {
-					hasLimit = true
-					break
+		if d.Block == "server" && serverHasPublicListen(d) {
+			hasLimit := ctx.httpLimitReq || ctx.httpLimitConn
+			if !hasLimit {
+				for _, sub := range WalkNodes(d.Directives, &d) {
+					if sub.Node.Directive == "limit_req" || sub.Node.Directive == "limit_conn" {
+						hasLimit = true
+						break
+					}
 				}
 			}
 			if !hasLimit {
@@ -102,9 +100,16 @@ func FindWarnings(tree *parser.ConfigTree) []Warning {
 			}
 		}
 		if d.Directive == "add_header" {
-			for _, h := range securityHeaders {
-				if strings.Contains(d.Args, h) {
-					foundHeaders[h] = struct{}{}
+			srv := findAncestorServer(item)
+			if srv != nil && serverHasSSLListen(*srv) {
+				key := ServerScopeKey(*srv)
+				if sslHeaders[key] == nil {
+					sslHeaders[key] = make(map[string]struct{})
+				}
+				for _, h := range securityHeaders {
+					if strings.Contains(d.Args, h) {
+						sslHeaders[key][h] = struct{}{}
+					}
 				}
 			}
 		}
@@ -128,12 +133,44 @@ func FindWarnings(tree *parser.ConfigTree) []Warning {
 			}
 		}
 	}
-	for _, h := range securityHeaders {
-		if _, ok := foundHeaders[h]; !ok {
-			warnings = append(warnings, Warning{Type: "missing_security_header", Directive: "add_header", Value: h})
+	for _, item := range Walk(tree) {
+		if item.Node.Block != "server" || !serverHasSSLListen(item.Node) {
+			continue
+		}
+		key := ServerScopeKey(item.Node)
+		have := sslHeaders[key]
+		for _, h := range securityHeaders {
+			if _, ok := have[h]; !ok {
+				warnings = append(warnings, Warning{Type: "missing_security_header", Directive: "add_header", Context: &item.Node, Value: h})
+			}
 		}
 	}
 	return warnings
+}
+
+func findAncestorServer(item WalkItem) *parser.Node {
+	if item.Node.Block == "server" {
+		return &item.Node
+	}
+	if item.Parent != nil && item.Parent.Block == "server" {
+		return item.Parent
+	}
+	for i := len(item.Ancestors) - 1; i >= 0; i-- {
+		if item.Ancestors[i] != nil && item.Ancestors[i].Block == "server" {
+			return item.Ancestors[i]
+		}
+	}
+	return nil
+}
+
+// HasWeakTLSProtocols проверяет TLS 1.0/1.1 в ssl_protocols.
+func HasWeakTLSProtocols(args string) bool {
+	for _, tok := range strings.Fields(args) {
+		if tok == "TLSv1" || tok == "TLSv1.1" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSize(val string) *int64 {

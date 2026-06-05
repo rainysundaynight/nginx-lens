@@ -60,9 +60,16 @@ type CustomRule struct {
 
 // Run выполняет все правила над деревом конфигурации.
 func (e *Engine) Run(tree *parser.ConfigTree) []Issue {
+	reqZone, connZone := analyzer.LimitZonesPresent(tree)
 	var issues []Issue
 	for _, item := range analyzer.Walk(tree) {
 		for _, rule := range e.rules {
+			if rule.ID == "limit_req_zone_missing" && reqZone {
+				continue
+			}
+			if rule.ID == "limit_conn_zone_missing" && connZone {
+				continue
+			}
 			if rule.Check != nil && rule.Check(item) {
 				issues = append(issues, Issue{
 					RuleID:    rule.ID,
@@ -136,8 +143,7 @@ func builtinPack(name string) []Rule {
 			{ID: "no_tls10", Severity: analyzer.SeverityHigh, Message: "TLS 1.0/1.1 запрещён Mozilla guidelines",
 				FixHint: "ssl_protocols TLSv1.2 TLSv1.3;",
 				Check: func(item analyzer.WalkItem) bool {
-					return item.Node.Directive == "ssl_protocols" &&
-						(strings.Contains(item.Node.Args, "TLSv1") && !strings.Contains(item.Node.Args, "TLSv1.2"))
+					return item.Node.Directive == "ssl_protocols" && analyzer.HasWeakTLSProtocols(item.Node.Args)
 				}},
 		}
 	case "performance", "performance-baseline":

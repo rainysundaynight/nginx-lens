@@ -77,7 +77,7 @@ server {
 		t.Fatal("policy engine должен найти нарушения")
 	}
 	result := analyzer.RunAnalysis(tree)
-	score := analyzer.ComputeScore(result, len(policyIssues), 0)
+	score := analyzer.ComputeScoreFromIssues(analyzer.CollectIssues(result), 0)
 	if score.Total <= 0 || score.Total > 100 {
 		t.Fatalf("score вне диапазона: %v", score.Total)
 	}

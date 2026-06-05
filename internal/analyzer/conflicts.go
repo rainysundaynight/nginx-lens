@@ -55,6 +55,12 @@ func FindLocationConflicts(tree *parser.ConfigTree) []LocationConflict {
 }
 
 func locationsConflict(loc1, loc2 string) bool {
+	if loc1 == loc2 {
+		return false
+	}
+	if loc1 == "/" || loc2 == "/" {
+		return false
+	}
 	return strings.HasPrefix(loc1, loc2) || strings.HasPrefix(loc2, loc1)
 }
 
@@ -78,7 +84,7 @@ func FindListenServerNameConflicts(tree *parser.ConfigTree) []ListenConflict {
 		}
 		for _, sub := range WalkNodes(item.Node.Directives, &item.Node) {
 			if sub.Node.Directive == "listen" {
-				info.listen[strings.TrimSpace(sub.Node.Args)] = struct{}{}
+				info.listen[NormalizeListenKey(sub.Node.Args)] = struct{}{}
 			}
 			if sub.Node.Directive == "server_name" {
 				for _, n := range strings.Fields(sub.Node.Args) {

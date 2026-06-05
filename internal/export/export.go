@@ -53,6 +53,18 @@ func FormatAnalyzeResults(result analyzer.AnalysisResult, filter analyzer.Filter
 	return AnalyzeExport{Issues: filtered, Summary: summary}
 }
 
+// AppendIssue добавляет issue в экспорт с учётом фильтра и summary.
+func AppendIssue(exp *AnalyzeExport, issue analyzer.Issue, filter analyzer.FilterOptions) {
+	if !analyzer.ShouldIncludeIssue(issue.Type, issue.Severity, filter) {
+		return
+	}
+	exp.Issues = append(exp.Issues, issue)
+	if exp.Summary == nil {
+		exp.Summary = map[string]int{"high": 0, "medium": 0, "low": 0}
+	}
+	exp.Summary[string(issue.Severity)]++
+}
+
 // HealthExport — экспорт health.
 type HealthExport struct {
 	Upstreams map[string][]upstream.ServerHealth `json:"upstreams"`

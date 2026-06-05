@@ -86,7 +86,8 @@ var DefaultIssueMeta = map[string]IssueMeta{
 	"proxy_pass_no_scheme":         {"Добавьте http:// или https:// в proxy_pass.", SeverityMedium, "proxy_pass http://backend;"},
 	"autoindex_on":                 {"Отключите autoindex.", SeverityMedium, "autoindex off;"},
 	"if_block":                     {"Избегайте if внутри location.", SeverityMedium, ""},
-	"server_tokens_on":             {"Отключите server_tokens.", SeverityLow, "server_tokens off;"},
+	"server_tokens_on":             {"Отключите server_tokens.", SeverityHigh, "server_tokens off;"},
+	"server_tokens_off_missing":    {"server_tokens off не задан (по умолчанию nginx раскрывает версию).", SeverityHigh, "server_tokens off;"},
 	"ssl_missing":                  {"Укажите SSL-сертификат/ключ.", SeverityHigh, "ssl_certificate /path/cert.pem;\nssl_certificate_key /path/key.pem;"},
 	"ssl_protocols_weak":           {"Отключите устаревшие TLS.", SeverityHigh, "ssl_protocols TLSv1.2 TLSv1.3;"},
 	"ssl_ciphers_weak":             {"Используйте современные шифры.", SeverityHigh, "ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;"},
@@ -103,4 +104,5 @@ var DefaultIssueMeta = map[string]IssueMeta{
 	"rewrite_conflict":             {"Проверьте порядок rewrite.", SeverityMedium, ""},
 	"rewrite_no_flag":              {"Добавьте last/break к rewrite.", SeverityLow, "rewrite ^/old(/.*)$ /new$1 last;"},
 	"dead_location":                {"Удалите или используйте location.", SeverityLow, ""},
+	"missing_nginx_module":         {"Пересоберите nginx с нужным модулем.", SeverityHigh, ""},
 }

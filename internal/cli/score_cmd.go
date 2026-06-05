@@ -22,16 +22,26 @@ func newScoreCmd() *cobra.Command {
 				return err
 			}
 			result := analyzer.RunAnalysis(tree)
+			issues := analyzer.CollectIssues(result)
 			certIssues := analyzer.AuditCertificates(tree, cfg.Certs.WarnDays, certVolumeMap(cfg))
-			certHigh := 0
 			for _, c := range certIssues {
-				if c.Severity == analyzer.SeverityHigh {
-					certHigh++
-				}
+				issues = append(issues, analyzer.Issue{
+					Type: c.Type, Description: c.Message, Severity: c.Severity,
+					File: c.File, FixHint: c.FixHint, Solution: c.Message,
+				})
 			}
 			engine := policyEngineFromCfg(cfg)
-			policyIssues := engine.Run(tree)
-			report := analyzer.ComputeScore(result, len(policyIssues), certHigh)
+			for _, pi := range engine.Run(tree) {
+				iss := analyzer.Issue{
+					Type: pi.Type, Description: pi.Message, Severity: pi.Severity,
+					File: pi.File, Line: pi.Line, FixHint: pi.FixHint,
+				}
+				if meta, ok := analyzer.DefaultIssueMeta[pi.Type]; ok {
+					iss.Solution = meta.Solution
+				}
+				issues = append(issues, iss)
+			}
+			report := analyzer.ComputeScoreFromIssues(issues, 0)
 			switch outputFormat(cfg) {
 			case "json":
 				return export.PrintJSON(report)
