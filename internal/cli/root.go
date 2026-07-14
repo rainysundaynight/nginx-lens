@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/rainysundaynight/nginx-lens/internal/version"
 	"github.com/spf13/cobra"
@@ -61,12 +60,5 @@ func newVersionCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println(version.Version)
 		},
-	}
-}
-
-func exitCode(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ошибка: %v\n", err)
-		os.Exit(1)
 	}
 }

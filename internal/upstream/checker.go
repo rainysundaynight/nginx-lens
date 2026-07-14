@@ -35,7 +35,7 @@ func CheckTCP(address string, timeout float64, retries int) bool {
 	for i := 0; i < retries; i++ {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), dialTimeout)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return true
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -56,7 +56,7 @@ func CheckHTTP(address string, timeout float64, retries int) bool {
 		resp, err := client.Get(url)
 		if err == nil {
 			healthy := resp.StatusCode < 500
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if healthy {
 				return true
 			}

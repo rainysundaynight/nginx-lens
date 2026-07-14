@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -81,8 +80,4 @@ func (s styler) diffType(t string) string {
 
 func (s styler) pathParts(parts []string) string {
 	return strings.Join(parts, " → ")
-}
-
-func (s styler) println(format string, args ...interface{}) {
-	fmt.Println(fmt.Sprintf(format, args...))
 }

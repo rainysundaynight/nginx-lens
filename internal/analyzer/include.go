@@ -28,7 +28,7 @@ func BuildIncludeTree(path string, visited map[string]bool) IncludeTree {
 	if err != nil {
 		return IncludeTree{absPath: "not_found"}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var includes []IncludeTree
 	scanner := bufio.NewScanner(f)
@@ -95,7 +95,7 @@ func FindIncludeShadowing(tree IncludeTree, directive string) []IncludeShadow {
 							found = append(found, IncludeShadow{File: k, Directive: directive, Value: line})
 						}
 					}
-					f.Close()
+					_ = f.Close()
 				}
 				for _, sub := range subs {
 					walk(sub)

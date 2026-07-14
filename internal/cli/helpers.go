@@ -12,10 +12,6 @@ import (
 	"github.com/rainysundaynight/nginx-lens/internal/upstream"
 )
 
-func loadConfig() config.Config {
-	return config.Get().Config
-}
-
 func requireConfig() (config.Config, error) {
 	loader := config.Get()
 	if err := config.RequireConfigFile(loader); err != nil {

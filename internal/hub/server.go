@@ -32,15 +32,15 @@ func NewRouter() http.Handler {
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
 	r.Get("/version", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"version": version.Version})
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": version.Version})
 	})
 	// Публичный статус auth: нужен ли hub token для API (без раскрытия секрета).
 	r.Get("/api/v1/auth", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"required": webauth.HubToken() != ""})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"required": webauth.HubToken() != ""})
 	})
 	r.Get("/", handleDashboard)
 
@@ -96,7 +96,7 @@ func handleDashboard(w http.ResponseWriter, _ *http.Request) {
 	html = strings.ReplaceAll(html, "{{ version }}", version.Version)
 	html = strings.ReplaceAll(html, "{{ auth_required }}", strconv.FormatBool(webauth.HubToken() != ""))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
+	_, _ = w.Write([]byte(html))
 }
 
 func handleHubState(w http.ResponseWriter, _ *http.Request) {
@@ -107,7 +107,7 @@ func handleHubState(w http.ResponseWriter, _ *http.Request) {
 		refresh = 30
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(BuildHubState(results, version.Version, refresh))
+	_ = json.NewEncoder(w).Encode(BuildHubState(results, version.Version, refresh))
 }
 
 func handleAgents(w http.ResponseWriter, _ *http.Request) {
@@ -117,7 +117,7 @@ func handleAgents(w http.ResponseWriter, _ *http.Request) {
 		urls = append(urls, a.URL)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents": urls,
 		"items":  items,
 	})
@@ -145,7 +145,7 @@ func handleAddAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(ep)
+	_ = json.NewEncoder(w).Encode(ep)
 }
 
 // handleDeleteAgent — DELETE /api/v1/agents?url=.
@@ -160,7 +160,7 @@ func handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
 func handleSnapshots(w http.ResponseWriter, _ *http.Request) {
@@ -171,7 +171,7 @@ func handleSnapshots(w http.ResponseWriter, _ *http.Request) {
 		urls = append(urls, a.URL)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents":  urls,
 		"results": results,
 	})
@@ -193,7 +193,7 @@ func handleStatus(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents_total":  len(agents),
 		"agents_online": online,
 		"statuses":      statuses,
@@ -241,7 +241,7 @@ func fetchSnapshots(agents []AgentEndpoint) []map[string]interface{} {
 			if err != nil {
 				item["error"] = err.Error()
 			} else {
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				if resp.StatusCode == http.StatusOK {
 					var snap map[string]interface{}
 					if json.NewDecoder(resp.Body).Decode(&snap) == nil {

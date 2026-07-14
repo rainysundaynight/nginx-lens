@@ -8,7 +8,7 @@ import (
 )
 
 func TestStylerColorsEnabled(t *testing.T) {
-	os.Unsetenv("NO_COLOR")
+	_ = os.Unsetenv("NO_COLOR")
 	cfg := config.DefaultConfig()
 	cfg.Output.Colors = true
 	s := newStyler(cfg)
@@ -53,5 +53,5 @@ func TestStylerHeader(t *testing.T) {
 	_ = s.header("test")
 	_ = s.ok("ok")
 	_ = s.fail("fail")
-	os.Unsetenv("NO_COLOR")
+	_ = os.Unsetenv("NO_COLOR")
 }

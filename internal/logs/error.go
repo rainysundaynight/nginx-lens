@@ -119,12 +119,12 @@ func openLogFile(path string) (io.Reader, func(), error) {
 	if strings.HasSuffix(path, ".gz") {
 		gz, err := gzip.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, nil, err
 		}
-		return gz, func() { gz.Close(); f.Close() }, nil
+		return gz, func() { _ = gz.Close(); _ = f.Close() }, nil
 	}
-	return f, func() { f.Close() }, nil
+	return f, func() { _ = f.Close() }, nil
 }
 
 func isErrorLine(line string) bool {

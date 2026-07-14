@@ -66,10 +66,11 @@ func ComputeScoreFromIssues(issues []Issue, certHigh int) ScoreReport {
 			cats[4].Score -= p
 			cats[4].Issues++
 		default:
-			if iss.Severity == SeverityHigh {
+			switch iss.Severity {
+			case SeverityHigh:
 				cats[0].Score -= p
 				cats[0].Issues++
-			} else if iss.Severity == SeverityMedium {
+			case SeverityMedium:
 				cats[3].Score -= p / 2
 				cats[3].Issues++
 			}

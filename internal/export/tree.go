@@ -45,23 +45,23 @@ func renderTreeHTMLNodes(b *strings.Builder, nodes []parser.Node) {
 		b.WriteString("<li>")
 		switch {
 		case n.Upstream != "":
-			b.WriteString(fmt.Sprintf("<b>upstream %s</b>", n.Upstream))
+			fmt.Fprintf(b, "<b>upstream %s</b>", n.Upstream)
 			if len(n.Servers) > 0 {
 				b.WriteString("<ul>")
 				for _, s := range n.Servers {
-					b.WriteString(fmt.Sprintf("<li>server %s</li>", s))
+					fmt.Fprintf(b, "<li>server %s</li>", s)
 				}
 				b.WriteString("</ul>")
 			}
 		case n.Block != "":
-			b.WriteString(fmt.Sprintf("<b>%s</b> %s", n.Block, n.Arg))
+			fmt.Fprintf(b, "<b>%s</b> %s", n.Block, n.Arg)
 			if len(n.Directives) > 0 {
 				b.WriteString("<ul>")
 				renderTreeHTMLNodes(b, n.Directives)
 				b.WriteString("</ul>")
 			}
 		case n.Directive != "":
-			b.WriteString(fmt.Sprintf("%s %s", n.Directive, n.Args))
+			fmt.Fprintf(b, "%s %s", n.Directive, n.Args)
 		}
 		b.WriteString("</li>")
 	}

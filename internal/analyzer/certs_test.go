@@ -58,7 +58,7 @@ func writeExpiredCert(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: der})
-	f.Close()
+	_ = pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+	_ = f.Close()
 	return path
 }

@@ -31,7 +31,7 @@ func ParseNginxConfig(path string) (*ConfigTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var lines []string
 	scanner := bufio.NewScanner(f)
@@ -48,10 +48,6 @@ func ParseNginxConfig(path string) (*ConfigTree, error) {
 
 type parseBlockOptions struct {
 	skipIncludes bool
-}
-
-func parseBlock(lines []string, baseDir, sourceFile string) ([]Node, map[string][]string) {
-	return parseBlockOpts(lines, baseDir, sourceFile, parseBlockOptions{})
 }
 
 // stripComments удаляет комментарии из строки конфигурации.
@@ -253,7 +249,7 @@ func readLines(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var lines []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {

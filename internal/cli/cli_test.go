@@ -63,8 +63,8 @@ func executeCLI(args ...string) (stdout, stderr string, err error) {
 	cmd := NewRoot()
 	cmd.SetArgs(args)
 	runErr := cmd.Execute()
-	outW.Close()
-	errW.Close()
+	_ = outW.Close()
+	_ = errW.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
 	var outBuf, errBuf bytes.Buffer
 	_, _ = io.Copy(&outBuf, outR)

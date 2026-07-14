@@ -125,6 +125,6 @@ func writeTemp(t *testing.T, content string) string {
 	_, err = f.WriteString(content)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
-	t.Cleanup(func() { os.Remove(f.Name()) })
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
 	return f.Name()
 }

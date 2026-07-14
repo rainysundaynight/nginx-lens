@@ -322,15 +322,15 @@ func openLogTail(path string, maxLines int) (io.Reader, func(), error) {
 		return nil, nil, err
 	}
 	var reader io.Reader = f
-	closer := func() { f.Close() }
+	closer := func() { _ = f.Close() }
 	if strings.HasSuffix(path, ".gz") {
 		gz, err := gzip.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, nil, err
 		}
 		reader = gz
-		closer = func() { gz.Close(); f.Close() }
+		closer = func() { _ = gz.Close(); _ = f.Close() }
 	}
 	lines, err := readLastLines(reader, maxLines)
 	if err != nil {

@@ -68,5 +68,5 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 			}, float64(c.ErrorTotal))
 		}
 	}
-	w.Write([]byte(b.String()))
+	_, _ = w.Write([]byte(b.String()))
 }

@@ -25,7 +25,7 @@ func installCompletion() string {
 	if err != nil {
 		return fmt.Sprintf("Completion не установлен в %s: %v\n  Вручную: nginx-lens completion %s > %s", path, err, shell, path)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := writeCompletion(shell, f); err != nil {
 		return fmt.Sprintf("Completion: %v", err)
 	}

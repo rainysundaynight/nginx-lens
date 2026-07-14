@@ -53,9 +53,9 @@ func newValidateCmd() *cobra.Command {
 				fmt.Printf("Policy violations: %d (fail_on=%s)\n", len(policyIssues), failOn)
 				switch outputFormat(cfg) {
 				case "json":
-					export.PrintJSON(results)
+					_ = export.PrintJSON(results)
 				case "yaml":
-					export.PrintYAML(results)
+					_ = export.PrintYAML(results)
 				}
 				if exitCode != 0 {
 					os.Exit(exitCode)
@@ -163,9 +163,9 @@ func newValidateCmd() *cobra.Command {
 
 			switch outputFormat(cfg) {
 			case "json":
-				export.PrintJSON(results)
+				_ = export.PrintJSON(results)
 			case "yaml":
-				export.PrintYAML(results)
+				_ = export.PrintYAML(results)
 			}
 
 			if exitCode != 0 {

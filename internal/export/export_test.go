@@ -77,7 +77,7 @@ func TestWriteCSV(t *testing.T) {
 	oldStdout := os.Stdout
 	os.Stdout = w
 	err = WriteCSV([]string{"a", "b"}, [][]string{{"1", "2"}})
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 	if err != nil {
 		t.Fatal(err)

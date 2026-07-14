@@ -90,16 +90,6 @@ func parseConfiguredAgents() []AgentEndpoint {
 	return out
 }
 
-// parseAgents — legacy: только URL (для совместимости).
-func parseAgents() []string {
-	eps := listAgents()
-	out := make([]string, 0, len(eps))
-	for _, e := range eps {
-		out = append(out, e.URL)
-	}
-	return out
-}
-
 func normalizeAgentURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
