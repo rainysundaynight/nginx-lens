@@ -195,15 +195,22 @@
     });
   }
 
-  function pageHeader(eyebrow, title, desc, actions) {
+  function pageHeader(eyebrow, title, desc, actions, tone) {
+    const toneCls = eyebrowToneClass(tone);
     return `<div class="page-header"${animAttr()}>
       <div>
-        ${eyebrow ? `<div class="page-eyebrow"><span class="page-eyebrow-dot"></span>${esc(eyebrow)}</div>` : ""}
+        ${eyebrow ? `<div class="page-eyebrow${toneCls}"><span class="page-eyebrow-dot"></span>${esc(eyebrow)}</div>` : ""}
         <h1 class="page-title">${esc(title)}</h1>
         ${desc ? `<p class="page-desc">${esc(desc)}</p>` : ""}
       </div>
       ${actions || ""}
     </div>`;
+  }
+
+  function eyebrowToneClass(tone) {
+    if (tone === "offline" || tone === "critical") return " is-offline";
+    if (tone === "warning" || tone === "degraded") return " is-warning";
+    return "";
   }
 
   function renderKpiCards(k, delay) {
@@ -700,9 +707,10 @@
   }
 
   function renderDetailHeader(s) {
+    const tone = s.status === "offline" ? "offline" : s.status === "warning" ? "warning" : "";
     return `<div class="detail-header"${animAttr()}>
       <div>
-        <div class="page-eyebrow"><span class="page-eyebrow-dot"></span>Snapshot · ${esc(s.id)}</div>
+        <div class="page-eyebrow${eyebrowToneClass(tone)}"><span class="page-eyebrow-dot"></span>Snapshot · ${esc(s.id)}</div>
         <h1 class="page-title">${esc(s.name)}</h1>
         <a href="${esc(s.url)}" target="_blank" rel="noopener" class="detail-url">${esc(s.url)}
           <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -1323,10 +1331,18 @@
     if (!state) return;
     const meta = state.meta || {};
     const status = meta.system_status || "—";
-    const statusLabel = status === "nominal" || status === "ok" || status === "healthy"
+    const statusNorm = String(status).toUpperCase();
+    const statusLabel = statusNorm === "NOMINAL" || statusNorm === "OK" || statusNorm === "HEALTHY"
       ? "System nominal"
       : "System " + status;
     $("#meta-status").textContent = statusLabel;
+    const pill = document.querySelector(".header-status-pill");
+    if (pill) {
+      pill.classList.remove("is-offline", "is-degraded", "is-nominal");
+      if (statusNorm === "OFFLINE") pill.classList.add("is-offline");
+      else if (statusNorm === "DEGRADED") pill.classList.add("is-degraded");
+      else pill.classList.add("is-nominal");
+    }
     const sec = meta.refresh_interval || 30;
     $("#meta-refresh").textContent = sec + "s";
     const online = meta.agents_online || 0;

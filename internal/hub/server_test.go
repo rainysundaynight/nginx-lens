@@ -1,8 +1,10 @@
 package hub
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,4 +52,24 @@ func TestHubState(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"snapshots"`)
 	assert.Contains(t, w.Body.String(), `"kpi"`)
+}
+
+func TestAgentHTTPErrorIncludesBody(t *testing.T) {
+	resp := &http.Response{
+		Status:     "500 Internal Server Error",
+		StatusCode: http.StatusInternalServerError,
+		Body:       io.NopCloser(strings.NewReader("nginx.conf не найден: /etc/nginx/nginx.conf\n")),
+	}
+	got := agentHTTPError(resp)
+	assert.Contains(t, got, "500 Internal Server Error")
+	assert.Contains(t, got, "nginx.conf не найден")
+}
+
+func TestAgentHTTPErrorEmptyBody(t *testing.T) {
+	resp := &http.Response{
+		Status:     "502 Bad Gateway",
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(strings.NewReader("   ")),
+	}
+	assert.Equal(t, "502 Bad Gateway", agentHTTPError(resp))
 }

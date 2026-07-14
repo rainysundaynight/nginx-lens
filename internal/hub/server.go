@@ -3,6 +3,8 @@ package hub
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -247,9 +249,11 @@ func fetchSnapshots(agents []AgentEndpoint) []map[string]interface{} {
 					if json.NewDecoder(resp.Body).Decode(&snap) == nil {
 						item["online"] = true
 						item["snapshot"] = snap
+					} else {
+						item["error"] = "invalid snapshot JSON"
 					}
 				} else {
-					item["error"] = resp.Status
+					item["error"] = agentHTTPError(resp)
 				}
 			}
 			mu.Lock()
@@ -259,4 +263,14 @@ func fetchSnapshots(agents []AgentEndpoint) []map[string]interface{} {
 	}
 	wg.Wait()
 	return results
+}
+
+// agentHTTPError собирает Status + body ответа агента для отображения в UI.
+func agentHTTPError(resp *http.Response) string {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	msg := strings.TrimSpace(string(body))
+	if err != nil || msg == "" {
+		return resp.Status
+	}
+	return fmt.Sprintf("%s: %s", resp.Status, msg)
 }
