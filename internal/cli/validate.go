@@ -117,7 +117,7 @@ func newValidateCmd() *cobra.Command {
 				if warnDays == 0 {
 					warnDays = 30
 				}
-				certIssues := analyzer.AuditCertificates(tree, warnDays, certVolumeMap(cfg))
+				certIssues := analyzer.AuditCertificatesRead(tree, warnDays, certReadFile(cfg))
 				results["certs"] = certIssues
 				for _, c := range certIssues {
 					if issueFails(c.Severity) {

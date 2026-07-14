@@ -36,6 +36,37 @@ func TestAuditCertificatesExpired(t *testing.T) {
 	}
 }
 
+func TestAuditCertificatesReadCustom(t *testing.T) {
+	pemData := []byte("not-a-cert")
+	tree := parser.NewConfigTree([]parser.Node{{
+		Block: "server",
+		Directives: []parser.Node{
+			{Directive: "server_name", Args: "a.example"},
+			{Directive: "ssl_certificate", Args: "/etc/nginx/ssl/a.pem"},
+		},
+	}}, nil)
+	called := false
+	issues := AuditCertificatesRead(tree, 30, func(path string) ([]byte, error) {
+		called = true
+		if path != "/etc/nginx/ssl/a.pem" {
+			t.Fatalf("path=%q", path)
+		}
+		return pemData, nil
+	})
+	if !called {
+		t.Fatal("reader не вызван")
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Type == "cert_invalid_pem" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("ожидался cert_invalid_pem от docker/custom reader")
+	}
+}
+
 func writeExpiredCert(t *testing.T) string {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

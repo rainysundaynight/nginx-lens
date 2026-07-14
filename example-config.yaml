@@ -18,6 +18,8 @@ defaults:
 
 # --- Docker (nginx в контейнере) ---
 # enabled: auto — detect контейнера; true — принудительно; false — только хост
+# При UseExec: nginx -T внутри контейнера; сертификаты читаются через docker exec cat
+# (volume_map опционален, но ускоряет доступ к файлам на хосте)
 docker:
   enabled: auto
   container: ""

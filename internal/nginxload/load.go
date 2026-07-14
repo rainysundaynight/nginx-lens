@@ -1,6 +1,8 @@
 package nginxload
 
 import (
+	"fmt"
+
 	"github.com/rainysundaynight/nginx-lens/internal/config"
 	"github.com/rainysundaynight/nginx-lens/internal/docker"
 	"github.com/rainysundaynight/nginx-lens/internal/parser"
@@ -29,14 +31,17 @@ func BuildTree(cfg config.Config) (*parser.ConfigTree, string, error) {
 	var tree *parser.ConfigTree
 	if dctx.UseExec {
 		out, err := docker.NginxT(dctx, dctx.ConfigInside)
-		if err == nil {
-			tree, err = parser.ParseExpandedOutput(out)
-			if err != nil {
-				return nil, "", err
-			}
+		if err != nil {
+			return nil, "", fmt.Errorf(
+				"nginx -T в контейнере %q не выполнен (проверьте синтаксис конфига): %w",
+				dctx.Container, err,
+			)
 		}
-	}
-	if tree == nil {
+		tree, err = parser.ParseExpandedOutput(out)
+		if err != nil {
+			return nil, "", fmt.Errorf("не удалось разобрать вывод nginx -T: %w", err)
+		}
+	} else {
 		path := dctx.HostConfigPath
 		if path == "" {
 			path = cfg.Defaults.NginxConfigPath

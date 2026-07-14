@@ -23,7 +23,7 @@ func newScoreCmd() *cobra.Command {
 			}
 			result := analyzer.RunAnalysis(tree)
 			issues := analyzer.CollectIssues(result)
-			certIssues := analyzer.AuditCertificates(tree, cfg.Certs.WarnDays, certVolumeMap(cfg))
+			certIssues := analyzer.AuditCertificatesRead(tree, cfg.Certs.WarnDays, certReadFile(cfg))
 			for _, c := range certIssues {
 				issues = append(issues, analyzer.Issue{
 					Type: c.Type, Description: c.Message, Severity: c.Severity,

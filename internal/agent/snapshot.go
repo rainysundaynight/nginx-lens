@@ -78,7 +78,7 @@ func CollectSnapshot() (*Snapshot, error) {
 	if warnDays == 0 {
 		warnDays = 30
 	}
-	certIssues := analyzer.AuditCertificates(tree, warnDays, cfg.Docker.VolumeMap)
+	certIssues := analyzer.AuditCertificatesRead(tree, warnDays, nginxload.CertReadFile(cfg))
 	for _, c := range certIssues {
 		export.AppendIssue(&analyzeExport, issueFromCert(c), filter)
 	}

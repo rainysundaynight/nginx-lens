@@ -59,3 +59,16 @@ func TailLog(ctx Context, pathInside string, lines int) (string, error) {
 	}
 	return string(out), nil
 }
+
+// ReadFile читает файл целиком из контейнера (certs / конфиги без volume_map).
+func ReadFile(ctx Context, pathInside string) ([]byte, error) {
+	if pathInside == "" {
+		return nil, fmt.Errorf("путь внутри контейнера пуст")
+	}
+	cmd := exec.Command(ctx.Binary, "exec", ctx.Container, "cat", pathInside)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("docker exec cat %s: %w: %s", pathInside, err, strings.TrimSpace(string(out)))
+	}
+	return out, nil
+}

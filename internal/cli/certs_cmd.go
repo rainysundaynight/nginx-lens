@@ -25,7 +25,7 @@ func newCertsCmd() *cobra.Command {
 			if warnDays == 0 {
 				warnDays = 30
 			}
-			issues := analyzer.AuditCertificates(tree, warnDays, certVolumeMap(cfg))
+			issues := analyzer.AuditCertificatesRead(tree, warnDays, certReadFile(cfg))
 			switch outputFormat(cfg) {
 			case "json":
 				return export.PrintJSON(issues)

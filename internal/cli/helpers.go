@@ -93,8 +93,8 @@ func checkNginxSyntax(cfg config.Config, skipWarns bool) (bool, []string, error)
 	return valid, errs, nil
 }
 
-func certVolumeMap(cfg config.Config) map[string]string {
-	return cfg.Docker.VolumeMap
+func certReadFile(cfg config.Config) analyzer.CertReadFile {
+	return nginxload.CertReadFile(cfg)
 }
 
 func requireNonEmpty(field, value string) error {

@@ -59,3 +59,12 @@ func TestDockerContext(t *testing.T) {
 		t.Fatalf("host path=%q", ctx.HostConfigPath)
 	}
 }
+
+func TestBuildTreeMissingHostFile(t *testing.T) {
+	cfg := testCfg(t)
+	cfg.Defaults.NginxConfigPath = "/nonexistent/nginx.conf"
+	_, _, err := BuildTree(cfg)
+	if err == nil {
+		t.Fatal("ожидалась ошибка отсутствия файла")
+	}
+}

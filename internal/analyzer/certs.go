@@ -27,8 +27,19 @@ type CertIssue struct {
 	File        string    `json:"file,omitempty"`
 }
 
+// CertReadFile читает PEM по логическому пути из nginx.conf.
+type CertReadFile func(path string) ([]byte, error)
+
 // AuditCertificates проверяет SSL-сертификаты из конфигурации.
 func AuditCertificates(tree *parser.ConfigTree, warnDays int, volumeMap map[string]string) []CertIssue {
+	return AuditCertificatesRead(tree, warnDays, defaultCertReader(volumeMap))
+}
+
+// AuditCertificatesRead — аудит с кастомным reader (docker exec / volume_map).
+func AuditCertificatesRead(tree *parser.ConfigTree, warnDays int, readFile CertReadFile) []CertIssue {
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
 	var issues []CertIssue
 	seen := make(map[string]struct{})
 
@@ -53,14 +64,20 @@ func AuditCertificates(tree *parser.ConfigTree, warnDays int, volumeMap map[stri
 			continue
 		}
 		seen[key] = struct{}{}
-		hostPath := certPath
-		if mapped, ok := mapCertPath(volumeMap, certPath); ok {
-			hostPath = mapped
-		}
-		issues = append(issues, checkCertFile(hostPath, serverNames, item.Node.File, warnDays)...)
+		issues = append(issues, checkCertFile(certPath, serverNames, item.Node.File, warnDays, readFile)...)
 		issues = append(issues, auditServerSSL(item, certPath != "")...)
 	}
 	return issues
+}
+
+func defaultCertReader(volumeMap map[string]string) CertReadFile {
+	return func(path string) ([]byte, error) {
+		hostPath := path
+		if mapped, ok := mapCertPath(volumeMap, path); ok {
+			hostPath = mapped
+		}
+		return os.ReadFile(hostPath)
+	}
 }
 
 // CertTimelineEntry — точка таймлайна истечения сертификата.
@@ -161,14 +178,17 @@ func hostMatchesWildcard(host, wildcard string) bool {
 	return strings.HasSuffix(host, suffix) && strings.Count(host, ".") >= strings.Count(suffix, ".")
 }
 
-func checkCertFile(path, serverNames, file string, warnDays int) []CertIssue {
+func checkCertFile(path, serverNames, file string, warnDays int, readFile CertReadFile) []CertIssue {
 	var issues []CertIssue
-	data, err := os.ReadFile(path)
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+	data, err := readFile(path)
 	if err != nil {
 		issues = append(issues, CertIssue{
 			Type: "cert_not_found", Severity: SeverityHigh,
 			CertPath: path, Message: err.Error(), File: file,
-			FixHint: "Проверьте путь ssl_certificate и права доступа",
+			FixHint: "Проверьте путь ssl_certificate, volume_map или доступ docker exec",
 		})
 		return issues
 	}
