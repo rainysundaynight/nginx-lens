@@ -739,8 +739,15 @@
         );
       case "Build":
         return renderDataTable(
-          ["Параметр", "Значение"],
-          (s.build || []).map((b) => [`<span class="muted">${esc(b.name)}</span>`, esc(b.value)])
+          ["Параметр", "Значение", "Версия"],
+          (s.build || []).map((b) => {
+            const row = formatBuildRow(b.name, b.value);
+            return [
+              `<span class="muted">${esc(b.name)}</span>`,
+              row.valueHtml,
+              row.versionHtml,
+            ];
+          })
         );
       case "Certs":
         return renderDataTable(
@@ -762,6 +769,36 @@
       default:
         return "";
     }
+  }
+
+  // ---------- Разбор add-module ----------
+  // Из пути ./ngx_brotli-v1.0.0/ достаёт имя модуля и версию для колонки «Версия».
+  function parseModulePath(raw) {
+    const bare = String(raw || "")
+      .trim()
+      .replace(/^\.\//, "")
+      .replace(/\/+$/, "");
+    const m = bare.match(/^(.*?)-(v?\d+(?:\.\d+)+)$/);
+    if (!m) return { name: bare || String(raw || ""), version: "" };
+    return { name: m[1], version: m[2] };
+  }
+
+  function versionBadge(version) {
+    if (!version) return `<span class="muted">—</span>`;
+    return `<span class="build-ver-badge">${esc(version)}</span>`;
+  }
+
+  function formatBuildRow(name, value) {
+    const key = String(name || "");
+    const val = String(value || "");
+    if (key === "add-module" || key === "add-dynamic-module") {
+      const parsed = parseModulePath(val);
+      return {
+        valueHtml: `<span class="build-mod-name">${esc(parsed.name)}</span>`,
+        versionHtml: versionBadge(parsed.version),
+      };
+    }
+    return { valueHtml: esc(val), versionHtml: `<span class="muted">—</span>` };
   }
 
   function renderDataTable(headers, rows) {
