@@ -22,6 +22,7 @@ type HubState struct {
 	Snapshots    []HubSnapshot    `json:"snapshots"`
 	Correlations []HubCorrelation `json:"correlations"`
 	BlastRadius  []HubBlastGroup  `json:"blast_radius"`
+	Services     HubServicesApps  `json:"services"`
 }
 
 // HubMeta — метаданные hub.
@@ -36,11 +37,27 @@ type HubMeta struct {
 
 // HubKPI — карточки KPI.
 type HubKPI struct {
-	AgentsOnline    string `json:"agents_online"`
-	AgentsSuffix    string `json:"agents_suffix"`
-	CriticalIssues  string `json:"critical_issues"`
-	Warnings        string `json:"warnings"`
-	UpstreamHealthy string `json:"upstream_healthy"`
+	AgentsOnline    string        `json:"agents_online"`
+	AgentsSuffix    string        `json:"agents_suffix"`
+	CriticalIssues  string        `json:"critical_issues"`
+	Warnings        string        `json:"warnings"`
+	UpstreamHealthy string        `json:"upstream_healthy"`
+	Deltas          *HubKPIDeltas `json:"deltas,omitempty"`
+}
+
+// HubKPIDeltas — изменения относительно ~1ч назад.
+type HubKPIDeltas struct {
+	AgentsOnline    *HubKPIDelta `json:"agents_online,omitempty"`
+	CriticalIssues  *HubKPIDelta `json:"critical_issues,omitempty"`
+	Warnings        *HubKPIDelta `json:"warnings,omitempty"`
+	UpstreamHealthy *HubKPIDelta `json:"upstream_healthy,omitempty"`
+}
+
+// HubKPIDelta — одно изменение метрики.
+type HubKPIDelta struct {
+	Value    string `json:"value"`
+	Trend    string `json:"trend"` // up | down | flat
+	Positive bool   `json:"positive"`
 }
 
 // HubHealthBar — столбец health overview.
@@ -66,6 +83,9 @@ type HubSnapshot struct {
 	Name            string             `json:"name"`
 	URL             string             `json:"url"`
 	Host            string             `json:"host"`
+	Region          string             `json:"region,omitempty"`
+	Uptime          string             `json:"uptime,omitempty"`
+	ScrapeMs        int                `json:"scrape_ms,omitempty"`
 	Status          string             `json:"status"`
 	ConfigScore     int                `json:"config_score"`
 	Version         string             `json:"version"`
@@ -193,10 +213,12 @@ func BuildHubState(results []map[string]interface{}, hubVersion string, refreshS
 	}
 	var totalHigh, totalMed, totalLow int
 	upOk, upTotal := 0, 0
+	agentOnline := make(map[string]bool, len(results))
 
 	for _, item := range results {
 		snap := buildHubSnapshot(item)
 		state.Snapshots = append(state.Snapshots, snap)
+		agentOnline[snap.URL] = snap.Status != "offline"
 		if snap.Status == "online" || snap.Status == "warning" {
 			state.Meta.AgentsOnline++
 			totalHigh += snap.Severity.High
@@ -230,9 +252,11 @@ func BuildHubState(results []map[string]interface{}, hubVersion string, refreshS
 		state.Severity.LowPct = int(math.Round(float64(totalLow) / float64(totalIssues) * 100))
 	}
 
+	upPctVal := -1.0
 	upPct := "—"
 	if upTotal > 0 {
-		upPct = fmt.Sprintf("%.1f%%", float64(upOk)/float64(upTotal)*100)
+		upPctVal = float64(upOk) / float64(upTotal) * 100
+		upPct = fmt.Sprintf("%.1f%%", upPctVal)
 	}
 	state.KPI = HubKPI{
 		AgentsOnline:    fmt.Sprintf("%d", state.Meta.AgentsOnline),
@@ -241,6 +265,20 @@ func BuildHubState(results []map[string]interface{}, hubVersion string, refreshS
 		Warnings:        fmt.Sprintf("%02d", totalMed),
 		UpstreamHealthy: upPct,
 	}
+
+	cur := kpiSample{
+		At:           time.Now(),
+		AgentsOnline: state.Meta.AgentsOnline,
+		AgentsTotal:  state.Meta.AgentsTotal,
+		Critical:     totalHigh,
+		Warnings:     totalMed,
+		UpstreamPct:  upPctVal,
+		AgentOnline:  agentOnline,
+	}
+	prev := sampleNear1h()
+	state.KPI.Deltas = buildKPIDeltas(cur, prev)
+	recordKPISample(cur)
+	state.Services = buildServicesApps(results)
 	return state
 }
 
@@ -278,13 +316,41 @@ func buildHubSnapshot(item map[string]interface{}) HubSnapshot {
 		Status: status, Error: errMsg,
 		UpdatedAt: time.Now().Format("02.01.2006, 15:04:05"),
 	}
+	if region, _ := item["region"].(string); region != "" {
+		s.Region = region
+	}
+	if label, _ := item["label"].(string); label != "" {
+		s.Name = label
+	}
+	if scrapeMs, ok := item["scrape_ms"].(float64); ok {
+		s.ScrapeMs = int(scrapeMs)
+	} else if scrapeMs, ok := item["scrape_ms"].(int); ok {
+		s.ScrapeMs = scrapeMs
+	}
+	if avail := agentAvailabilityPct(agentURL); avail != "" {
+		s.Uptime = avail
+	}
 	if !online || raw == nil {
 		return s
 	}
 
 	meta, _ := raw["meta"].(map[string]interface{})
-	if h, ok := meta["hostname"].(string); ok && h != "" {
-		s.Name = h
+	if s.Name == id {
+		if h, ok := meta["hostname"].(string); ok && h != "" {
+			s.Name = h
+		}
+	}
+	if s.Region == "" {
+		if r, ok := meta["region"].(string); ok && r != "" {
+			s.Region = r
+		}
+	}
+	if s.Uptime == "" {
+		if sec, ok := meta["uptime_seconds"].(float64); ok {
+			s.Uptime = formatUptimeSec(int(sec))
+		} else if sec, ok := meta["uptime_seconds"].(int); ok {
+			s.Uptime = formatUptimeSec(sec)
+		}
 	}
 
 	if score, ok := raw["score"].(map[string]interface{}); ok {
@@ -347,6 +413,33 @@ func agentHost(agentURL string) string {
 		return agentURL
 	}
 	return u.Host
+}
+
+// formatUptimeSec — человекочитаемый uptime процесса агента.
+func formatUptimeSec(sec int) string {
+	if sec < 0 {
+		return ""
+	}
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	if sec < 3600 {
+		return fmt.Sprintf("%dm", sec/60)
+	}
+	if sec < 86400 {
+		h := sec / 3600
+		m := (sec % 3600) / 60
+		if m == 0 {
+			return fmt.Sprintf("%dh", h)
+		}
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	d := sec / 86400
+	h := (sec % 86400) / 3600
+	if h == 0 {
+		return fmt.Sprintf("%dd", d)
+	}
+	return fmt.Sprintf("%dd %dh", d, h)
 }
 
 func parseCategories(score map[string]interface{}) HubCategories {

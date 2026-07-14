@@ -20,4 +20,10 @@ func TestComputeAccessSnapshotDirectByPath(t *testing.T) {
 	if snap.ByUpstream["_direct"].Requests != 2 {
 		t.Fatalf("_direct=%+v", snap.ByUpstream["_direct"])
 	}
+	if len(snap.TopPaths) < 2 {
+		t.Fatalf("top_paths=%+v", snap.TopPaths)
+	}
+	if snap.TopPaths[0].Path != "/" || snap.TopPaths[0].Requests != 2 {
+		t.Fatalf("expected / first, got %+v", snap.TopPaths[0])
+	}
 }

@@ -2,27 +2,44 @@
   "use strict";
 
   const REFRESH_MS = window.NGINX_LENS_REFRESH || 30000;
-  const NAV = [
-    { label: "Overview", path: "", icon: "activity" },
-    { label: "Agents", path: "agents", icon: "layers" },
-    { label: "Snapshots", path: "snapshots", icon: "camera" },
-    { label: "Correlation", path: "correlation", icon: "git-branch" },
-    { label: "Blast-radius", path: "blast-radius", icon: "radio" },
+  // ---------- Navigation ----------
+  // Группы Monitor / Analyze и иконки пунктов сайдбара
+  const NAV_GROUPS = [
+    {
+      label: "Monitor",
+      items: [
+        { label: "Overview", path: "", icon: "activity", badge: null },
+        { label: "Agents", path: "agents", icon: "layers", badge: "agents" },
+      ],
+    },
+    {
+      label: "Analyze",
+      items: [
+        { label: "Snapshots", path: "snapshots", icon: "camera", badge: null },
+        { label: "Correlation", path: "correlation", icon: "git-branch", badge: null },
+        { label: "Blast-radius", path: "blast-radius", icon: "radio", badge: "blast" },
+      ],
+    },
   ];
   const TABS = ["Upstream", "Build", "Issues", "Certs", "Blast-radius", "Errors", "Explore"];
-
   const ICONS = {
     activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
     camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
     "git-branch": '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
     radio: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "alert-circle": '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    "alert-triangle": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    "trending-up": '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    "trending-down": '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
   };
 
   let state = null;
   let route = parseRoute();
   let detailTab = "Upstream";
   let searchQuery = "";
+  let overviewTab = "fleet"; // fleet | services
   let animate = true;
   let viewMounted = false;
 
@@ -46,14 +63,19 @@
       .replace(/"/g, "&quot;");
   }
 
-  function icon(name) {
+  function icon(name, cls) {
     const p = ICONS[name] || "";
-    return `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${p}</svg>`;
+    return `<svg class="${cls || "nav-icon"}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${p}</svg>`;
+  }
+
+  function navBadge(kind) {
+    if (!state) return "";
+    if (kind === "agents") return String((state.snapshots || []).length || (state.meta && state.meta.agents_total) || 0);
+    if (kind === "blast") return String((state.blast_radius || []).length || 0);
+    return "";
   }
 
   function token() {
-    const q = new URLSearchParams(location.search).get("token");
-    if (q) return q;
     return localStorage.getItem("nginx_lens_hub_token") || "";
   }
 
@@ -66,6 +88,11 @@
 
   async function fetchState() {
     const r = await fetch("/api/v1/hub/state", { headers: headers() });
+    if (r.status === 401) {
+      const err = new Error("unauthorized");
+      err.code = 401;
+      throw err;
+    }
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.json();
   }
@@ -146,15 +173,22 @@
 
   function renderNav() {
     const nav = $("#nav");
-    nav.innerHTML = NAV.map((item) => {
-      const active =
-        (item.path === "" && route.page === "overview") ||
-        route.page === item.path ||
-        (item.path === "snapshots" && route.page === "snapshot-detail");
-      return `<button type="button" class="nav-item${active ? " active" : ""}" data-nav="${esc(item.path)}">
-        ${active ? '<span class="nav-dot"></span>' : icon(item.icon)}
-        ${esc(item.label)}
-      </button>`;
+    nav.innerHTML = NAV_GROUPS.map((group) => {
+      const items = group.items
+        .map((item) => {
+          const active =
+            (item.path === "" && route.page === "overview") ||
+            route.page === item.path ||
+            (item.path === "snapshots" && route.page === "snapshot-detail");
+          const badge = item.badge ? navBadge(item.badge) : "";
+          return `<button type="button" class="nav-item${active ? " active" : ""}" data-nav="${esc(item.path)}">
+            ${icon(item.icon)}
+            <span>${esc(item.label)}</span>
+            ${badge ? `<span class="nav-badge">${esc(badge)}</span>` : ""}
+          </button>`;
+        })
+        .join("");
+      return `<div class="nav-group"><div class="nav-group-label">${esc(group.label)}</div>${items}</div>`;
     }).join("");
     nav.querySelectorAll("[data-nav]").forEach((el) => {
       el.addEventListener("click", () => navigate(el.dataset.nav));
@@ -164,7 +198,7 @@
   function pageHeader(eyebrow, title, desc, actions) {
     return `<div class="page-header"${animAttr()}>
       <div>
-        ${eyebrow ? `<div class="page-eyebrow">${esc(eyebrow)}</div>` : ""}
+        ${eyebrow ? `<div class="page-eyebrow"><span class="page-eyebrow-dot"></span>${esc(eyebrow)}</div>` : ""}
         <h1 class="page-title">${esc(title)}</h1>
         ${desc ? `<p class="page-desc">${esc(desc)}</p>` : ""}
       </div>
@@ -174,66 +208,110 @@
 
   function renderKpiCards(k, delay) {
     const critical = parseInt(k.critical_issues, 10) || 0;
+    const d = k.deltas || {};
     const cards = [
-      { label: "Агенты Online", value: k.agents_online, suffix: k.agents_suffix, tone: "t-primary" },
-      { label: "Critical Issues", value: k.critical_issues, tone: "t-danger", pulse: critical > 0 },
-      { label: "Warnings", value: k.warnings, tone: "t-warning" },
-      { label: "Upstream Healthy", value: k.upstream_healthy, tone: "t-highlight" },
+      { label: "Агенты Online", value: k.agents_online, suffix: k.agents_suffix, tone: "t-primary", iconTone: "primary", icon: "users", delta: d.agents_online },
+      { label: "Critical Issues", value: k.critical_issues, tone: "t-danger", iconTone: "danger", icon: "alert-circle", pulse: critical > 0, delta: d.critical_issues },
+      { label: "Warnings", value: k.warnings, tone: "t-warning", iconTone: "warning", icon: "alert-triangle", delta: d.warnings },
+      { label: "Upstream Healthy", value: k.upstream_healthy, tone: "t-highlight", iconTone: "highlight", icon: "activity", delta: d.upstream_healthy },
     ];
     return `<section class="kpi-grid">${cards
       .map(
-        (c, i) => `<div class="kpi-card"${animAttr(delay + i * 60)}>
-          <div class="kpi-label">${esc(c.label)}</div>
-          <div class="kpi-row">
-            <span class="kpi-value ${c.tone}">${esc(c.value)}</span>
-            ${c.suffix ? `<span class="kpi-suffix">${esc(c.suffix)}</span>` : ""}
+        (c, i) => `<div class="kpi-card"${animAttr(delay + i * 80)}>
+          <div class="kpi-ribbon ${c.iconTone}" aria-hidden="true"></div>
+          <div class="kpi-top">
+            <div class="kpi-icon ${c.iconTone}">${icon(c.icon)}</div>
             ${c.pulse ? '<span class="kpi-pulse"></span>' : ""}
+          </div>
+          <div class="kpi-body">
+            <div class="kpi-label">${esc(c.label)}</div>
+            <div class="kpi-row">
+              <span class="kpi-value ${c.tone}">${esc(c.value)}</span>
+              ${c.suffix ? `<span class="kpi-suffix">${esc(c.suffix)}</span>` : ""}
+            </div>
+            ${renderKpiDelta(c.delta)}
           </div>
         </div>`
       )
       .join("")}</section>`;
   }
 
+  function renderKpiDelta(delta) {
+    if (!delta || !delta.value) return "";
+    const trend = delta.trend || "flat";
+    const sens = delta.positive ? "good" : "bad";
+    const trendIcon = trend === "down" ? "trending-down" : "trending-up";
+    return `<div class="kpi-delta-row">
+      <span class="kpi-delta ${trend} ${sens}">${icon(trendIcon)}${esc(delta.value)}</span>
+      <span class="kpi-delta-hint">vs. 1h ago</span>
+    </div>`;
+  }
+
   function renderHealthOverview(bars) {
     if (!bars || !bars.length) {
-      return `<div class="panel"${animAttr(120)}><div class="empty">Нет данных upstream</div></div>`;
+      return `<div class="panel health-panel"${animAttr(120)}><div class="empty">Нет данных upstream</div></div>`;
     }
     const now = new Date();
     const labels = bars.map((_, i) => {
-      if (i === bars.length - 1) return "NOW";
+      if (i === bars.length - 1) return { text: "NOW", now: true };
       const m = new Date(now - (bars.length - 1 - i) * 60000);
-      return m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return { text: m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), now: false };
     });
-    return `<div class="panel"${animAttr(120)}>
+    const axisSparse = labels.filter((_, i) => i === 0 || i === Math.floor(labels.length / 2) || i === labels.length - 1);
+    return `<div class="panel health-panel"${animAttr(120)}>
       <div class="panel-head">
-        <h3 class="panel-title">Health Overview по агентам</h3>
-        <span class="panel-badge">LIVE FEED</span>
+        <div>
+          <h3 class="panel-title">Health Overview</h3>
+          <p class="panel-sub">Агрегированные health-сигналы по агентам · live</p>
+        </div>
+        <span class="panel-badge"><span class="panel-badge-dot"></span>Live feed</span>
       </div>
-      <div class="health-chart">${bars
-        .map((b) => {
-          const h = Math.max(8, Math.min(100, b.pct < 0 ? 50 : b.pct));
-          const op = 0.4 + (h / 100) * 0.5;
-          return `<div class="health-bar ${b.bad ? "bad" : "ok"}" style="height:${h}%;opacity:${op}" title="${esc(b.agent)}: ${Math.round(b.pct)}%"></div>`;
-        })
+      <div class="health-legend">
+        <div class="health-legend-item"><span class="health-legend-swatch ok"></span>Healthy</div>
+        <div class="health-legend-item"><span class="health-legend-swatch bad"></span>Incident</div>
+      </div>
+      <div class="health-chart-wrap">
+        <div class="health-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <div class="health-chart">${bars
+          .map((b) => {
+            const h = Math.max(8, Math.min(100, b.pct < 0 ? 50 : b.pct));
+            return `<div class="health-bar ${b.bad ? "bad" : "ok"}" style="height:${h}%" title="${esc(b.agent)}: ${Math.round(b.pct)}%"></div>`;
+          })
+          .join("")}</div>
+      </div>
+      <div class="health-axis">${axisSparse
+        .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "NOW" : l.text)}</span>`)
         .join("")}</div>
-      <div class="health-axis">${labels.map((l) => `<span>${esc(l)}</span>`).join("")}</div>
     </div>`;
   }
 
   function renderSeverityPanel(sev) {
+    const total = (sev.high || 0) + (sev.medium || 0) + (sev.low || 0);
     const rows = [
-      { label: "HIGH SEVERITY", pct: sev.high_pct, count: sev.high, fill: "severity-fill-high", text: "t-danger" },
-      { label: "MEDIUM SEVERITY", pct: sev.medium_pct, count: sev.medium, fill: "severity-fill-med", text: "t-warning" },
-      { label: "LOW SEVERITY", pct: sev.low_pct, count: sev.low, fill: "severity-fill-low", text: "t-primary" },
+      { label: "High severity", pct: sev.high_pct, count: sev.high, fill: "severity-fill-high", text: "t-danger", dot: "high" },
+      { label: "Medium severity", pct: sev.medium_pct, count: sev.medium, fill: "severity-fill-med", text: "t-warning", dot: "med" },
+      { label: "Low severity", pct: sev.low_pct, count: sev.low, fill: "severity-fill-low", text: "t-primary", dot: "low" },
     ];
-    return `<div class="panel"${animAttr(180)}>
-      <h3 class="panel-title" style="margin-bottom:1.5rem">Severity Breakdown</h3>
+    return `<div class="panel severity-panel-wrap"${animAttr(180)}>
+      <div class="panel-head">
+        <div>
+          <h3 class="panel-title">Severity Breakdown</h3>
+          <p class="panel-sub">Активные issues по флоту</p>
+        </div>
+        <div class="panel-total">
+          <div class="panel-total-val">${total}</div>
+          <div class="panel-total-label">total</div>
+        </div>
+      </div>
       <div class="severity-panel">${rows
         .map(
           (r) => `<div>
             <div class="severity-row-head">
-              <span>${esc(r.label)}</span>
-              <span class="${r.text}">${r.pct}% (${r.count})</span>
+              <div class="severity-row-label"><span class="severity-row-dot ${r.dot}"></span>${esc(r.label)}</div>
+              <div class="severity-row-vals">
+                <span class="severity-row-count ${r.text}">${r.count}</span>
+                <span class="severity-row-pct">${r.pct}%</span>
+              </div>
             </div>
             <div class="severity-track"><div class="${r.fill}" style="width:${r.pct}%"></div></div>
           </div>`
@@ -247,8 +325,11 @@
     const shown = list.slice(0, 10);
     return `<section${animAttr(240)}>
       <div class="section-head">
-        <h2 class="section-title">Active Agents Detail</h2>
-        <div class="section-meta">Showing 1-${shown.length} of ${list.length} agents</div>
+        <div>
+          <h2 class="section-title">Active agents</h2>
+          <p class="section-sub">Мониторинг ключевых узлов кластера · клик — детальный snapshot</p>
+        </div>
+        <div class="section-meta">1–${shown.length} of ${list.length}</div>
       </div>
       <div class="agents-feed">${shown.length ? shown.map(renderAgentRow).join("") : '<div class="empty">Агенты не настроены</div>'}</div>
     </section>`;
@@ -258,7 +339,7 @@
     const st = agentStatusLabel(s.status);
     const prev = snapPreview(s);
     const i = String((idx ?? 0) + 1).padStart(2, "0");
-    const action = st.critical ? "CORRELATE" : "VIEW RAW";
+    const action = st.critical ? "Correlate" : "View raw";
     const btnCls = st.critical ? "btn-outline btn-danger-outline" : "btn-outline";
     return `<div class="agent-row${st.critical ? " critical" : ""}" data-snap="${esc(s.id)}" data-action="${st.critical ? "correlation" : "detail"}">
       <div class="agent-idx ${st.critical ? "bad" : "ok"}">${i}</div>
@@ -267,7 +348,7 @@
           <span class="agent-name">${esc(s.name)}</span>
           <span class="badge ${st.cls}">${st.label}</span>
         </div>
-        <div class="agent-sub${st.critical ? " bad" : ""}">IP: ${esc(s.host)} • ${esc(st.critical ? (s.error || "unreachable") : "nginx/" + (s.version || "—"))}</div>
+        <div class="agent-sub${st.critical ? " bad" : ""}">${esc(s.host)} · ${esc(st.critical ? (s.error || "unreachable") : "v" + (s.version || "—"))}</div>
       </div>
       <div class="agent-preview">
         <div class="agent-preview-label">${esc(prev.label)}</div>
@@ -318,6 +399,29 @@
   }
 
   function renderOverview() {
+    return `
+      ${renderOverviewTabs()}
+      <div id="overview-pane">
+        ${overviewTab === "services" ? renderServicesApps() : renderFleetOverview()}
+      </div>
+    `;
+  }
+
+  function renderOverviewTabs() {
+    const svc = state.services || {};
+    const meta = svc.has_data
+      ? formatCount(svc.total_requests || 0) + " req · " + (svc.unique_services || 0) + " services"
+      : "access.log";
+    return `<div class="overview-tabs"${animAttr()}>
+      <div class="overview-tab-list">
+        <button type="button" class="overview-tab${overviewTab === "fleet" ? " active" : ""}" data-overview-tab="fleet">Обзор</button>
+        <button type="button" class="overview-tab${overviewTab === "services" ? " active" : ""}" data-overview-tab="services">Приложения и сервисы</button>
+      </div>
+      <div class="overview-tab-meta">${esc(meta)}</div>
+    </div>`;
+  }
+
+  function renderFleetOverview() {
     const snaps = state.snapshots || [];
     return `
       ${renderKpiCards(state.kpi, 0)}
@@ -330,34 +434,142 @@
     `;
   }
 
-  function kpiFromSnapshots(snaps) {
-    let high = 0;
-    let med = 0;
-    for (const s of snaps) {
-      if (s.status === "offline") continue;
-      high += s.severity?.high || 0;
-      med += s.severity?.med || 0;
+  function formatCount(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+    return String(n);
+  }
+
+  function renderServicesApps() {
+    const svc = state.services || {};
+    if (!svc.has_data) {
+      return `<div class="empty-dashed"${animAttr(40)}>
+        Нет данных access.log. Укажите <code>logs.path</code> у агентов и убедитесь, что в логе есть upstream_addr / URI.
+      </div>`;
     }
-    const online = snaps.filter((s) => s.status !== "offline").length;
-    return {
-      agents_online: String(online),
-      agents_suffix: "/ " + snaps.length,
-      critical_issues: String(high).padStart(2, "0"),
-      warnings: String(med).padStart(2, "0"),
-      upstream_healthy: state.kpi.upstream_healthy,
-    };
+    const tops = svc.upstreams || [];
+    const maxUp = tops.length ? tops[0].count : 1;
+    const ends = svc.endpoints || [];
+    const maxEnd = ends.length ? ends[0].count : 1;
+    const quality = svc.quality || [];
+    const maxQ = quality.length ? quality[0].total : 1;
+
+    return `
+      <div class="svc-kpi-grid"${animAttr(40)}>
+        <div class="svc-kpi">
+          <div class="svc-kpi-label">Всего запросов</div>
+          <div class="svc-kpi-value t-primary">${esc(formatCount(svc.total_requests))}</div>
+          <div class="svc-kpi-sub">за окно access.log</div>
+        </div>
+        <div class="svc-kpi">
+          <div class="svc-kpi-label">Уникальных сервисов</div>
+          <div class="svc-kpi-value" style="color:oklch(0.55 0.14 250)">${esc(String(svc.unique_services || 0))}</div>
+          <div class="svc-kpi-sub">upstream / backends</div>
+        </div>
+        <div class="svc-kpi">
+          <div class="svc-kpi-label">Top share</div>
+          <div class="svc-kpi-value t-highlight">${esc((svc.top_share_pct || 0).toFixed(1))}%</div>
+          <div class="svc-kpi-sub">${esc(svc.top_service || "—")}</div>
+        </div>
+        <div class="svc-kpi">
+          <div class="svc-kpi-label">Upstream traffic</div>
+          <div class="svc-kpi-value t-warning">${esc((svc.upstream_share_pct || 0).toFixed(1))}%</div>
+          <div class="svc-kpi-sub">5xx rate ${esc((svc.error_share_pct || 0).toFixed(1))}%</div>
+        </div>
+      </div>
+      <div class="svc-charts"${animAttr(100)}>
+        <div class="svc-chart">
+          <h3 class="svc-chart-title">Upstreams</h3>
+          <div class="svc-chart-sub">Backend-сервисы по числу запросов</div>
+          <div class="svc-rows">${
+            tops.length
+              ? tops.map((r, i) => serviceBarRow(r, maxUp, "upstream", i === 0)).join("")
+              : '<div class="empty">Нет upstream в логах</div>'
+          }</div>
+          <div class="svc-axis"><span>0</span><span>${esc(formatCount(Math.round(maxUp / 2)))}</span><span>${esc(formatCount(maxUp))}</span></div>
+        </div>
+        <div class="svc-chart">
+          <h3 class="svc-chart-title">Endpoints</h3>
+          <div class="svc-chart-sub">URI / locations по частоте</div>
+          <div class="svc-rows">${
+            ends.length
+              ? ends.map((r, i) => serviceBarRow(r, maxEnd, "endpoint", i === 0)).join("")
+              : '<div class="empty">Нет path-статистики</div>'
+          }</div>
+          <div class="svc-axis"><span>0</span><span>${esc(formatCount(Math.round(maxEnd / 2)))}</span><span>${esc(formatCount(maxEnd))}</span></div>
+        </div>
+        <div class="svc-chart">
+          <h3 class="svc-chart-title">Качество ответов</h3>
+          <div class="svc-chart-sub">OK vs 5xx по сервисам</div>
+          <div class="svc-rows">${
+            quality.length
+              ? quality.map((r) => serviceDualRow(r, maxQ)).join("")
+              : '<div class="empty">Нет данных</div>'
+          }</div>
+          <div class="svc-legend">
+            <div class="svc-legend-item"><span class="svc-legend-swatch ok"></span>2xx–4xx</div>
+            <div class="svc-legend-item"><span class="svc-legend-swatch err"></span>5xx</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function serviceBarRow(r, max, tone, showVal) {
+    const w = max > 0 ? Math.max(2, (r.count / max) * 100) : 0;
+    return `<div class="svc-row">
+      <div class="svc-row-head">
+        <span class="svc-row-name" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="svc-row-val${showVal ? " strong" : ""}">${esc(formatCount(r.count))}${r.pct ? " · " + r.pct + "%" : ""}</span>
+      </div>
+      <div class="svc-track"><div class="svc-fill ${tone}" style="width:${w}%"></div></div>
+    </div>`;
+  }
+
+  function serviceDualRow(r, max) {
+    const totalW = max > 0 ? Math.max(4, (r.total / max) * 100) : 0;
+    const okShare = r.total > 0 ? (r.ok / r.total) * 100 : 0;
+    const errShare = r.total > 0 ? (r.errors / r.total) * 100 : 0;
+    return `<div class="svc-row">
+      <div class="svc-row-head">
+        <span class="svc-row-name" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="svc-row-val">${esc(formatCount(r.total))}</span>
+      </div>
+      <div class="svc-track" style="width:${totalW}%">
+        <div class="svc-fill ok" style="width:${okShare}%;border-radius:0"></div>
+        <div class="svc-fill err" style="width:${errShare}%;border-radius:0"></div>
+      </div>
+    </div>`;
   }
 
   function renderAgents() {
     const snaps = filterSnapshots(state.snapshots || []);
+    const total = snaps.length;
+    const online = snaps.filter((s) => s.status === "online").length;
+    const warning = snaps.filter((s) => s.status === "warning").length;
+    const critical = snaps.filter((s) => s.status === "offline").length;
+    const stats = [
+      { label: "Total", value: String(total), tone: "t-highlight" },
+      { label: "Online", value: String(online), tone: "t-primary" },
+      { label: "Warning", value: String(warning), tone: "t-warning" },
+      { label: "Critical", value: String(critical), tone: "t-danger" },
+    ];
     return `
       ${pageHeader(
         "Section · 01",
         "Agents",
         "Парк nginx-агентов. Кликните по строке для детального snapshot.",
-        '<button type="button" class="btn-primary" disabled style="opacity:0.5;cursor:not-allowed">+ Add agent</button>'
+        '<button type="button" class="btn-primary" id="btn-add-agent">+ Add agent</button>'
       )}
-      ${renderKpiCards(kpiFromSnapshots(snaps), 0)}
+      <div class="stat-grid">${stats
+        .map(
+          (s) => `<div class="stat-card">
+            <div class="stat-card-label">${esc(s.label)}</div>
+            <div class="stat-card-val ${s.tone}">${esc(s.value)}</div>
+          </div>`
+        )
+        .join("")}</div>
       <div class="agent-table-wrap">${renderAgentTable(snaps)}</div>
     `;
   }
@@ -368,13 +580,18 @@
       .map((s) => {
         const st = agentStatusLabel(s.status);
         const clickable = s.status !== "offline";
+        const latency = s.scrape_ms != null
+          ? s.scrape_ms + "ms"
+          : s.access
+            ? Math.round(s.access.p95_ms) + "ms"
+            : "—";
         return `<tr class="${clickable ? "clickable" : ""}" ${clickable ? `data-snap="${esc(s.id)}"` : ""}>
           <td>${esc(s.name)}</td>
-          <td class="muted">—</td>
+          <td class="muted">${esc(s.region || "—")}</td>
           <td class="muted">${esc(s.host)}</td>
           <td class="muted">${esc(s.version ? "v" + s.version : "—")}</td>
-          <td>${s.access ? esc(s.access.p95_ms.toFixed(0) + "ms") : "—"}</td>
-          <td>—</td>
+          <td>${esc(latency)}</td>
+          <td>${esc(s.uptime || "—")}</td>
           <td><span class="badge ${st.cls}">${st.label}</span></td>
         </tr>`;
       })
@@ -393,14 +610,23 @@
   function renderSnapCard(s) {
     if (s.status === "offline") {
       return `<div class="snap-card" data-snap="${esc(s.id)}">
-        <div class="snap-card-head"><div><div class="snap-card-name">${esc(s.name)} <span class="badge badge-critical">offline</span></div><div class="snap-card-url">${esc(s.url)}</div></div><span class="muted">→</span></div>
+        <div class="snap-card-head">
+          <div>
+            <div class="snap-card-name">${esc(s.name)} <span class="badge badge-critical">offline</span></div>
+            <div class="snap-card-url">${esc(s.url)}</div>
+          </div>
+          <svg class="snap-card-chevron icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
         <div class="corr-error">${esc(s.error || "unreachable")}</div>
       </div>`;
     }
     return `<div class="snap-card" data-snap="${esc(s.id)}">
       <div class="snap-card-head">
-        <div><div class="snap-card-name">${esc(s.name)} <span class="badge ${s.status === "warning" ? "badge-warning" : "badge-online"}">${esc(s.status)}</span></div><div class="snap-card-url">${esc(s.url)}</div></div>
-        <span class="muted">→</span>
+        <div>
+          <div class="snap-card-name">${esc(s.name)} <span class="badge ${s.status === "warning" ? "badge-warning" : "badge-online"}">${esc(s.status)}</span></div>
+          <div class="snap-card-url">${esc(s.url)}</div>
+        </div>
+        <svg class="snap-card-chevron icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
       </div>
       <div class="snap-scores">
         <div><div class="score-cell-label">Score</div><div class="score-cell-val t-primary">${s.config_score}<span class="kpi-suffix">/100</span></div></div>
@@ -476,13 +702,15 @@
   function renderDetailHeader(s) {
     return `<div class="detail-header"${animAttr()}>
       <div>
-        <div class="page-eyebrow">Snapshot · ${esc(s.id)}</div>
-        <h1 class="page-title" style="font-size:1.875rem">${esc(s.name)}</h1>
-        <a href="${esc(s.url)}" target="_blank" rel="noopener" class="detail-url">${esc(s.url)} ↗</a>
+        <div class="page-eyebrow"><span class="page-eyebrow-dot"></span>Snapshot · ${esc(s.id)}</div>
+        <h1 class="page-title">${esc(s.name)}</h1>
+        <a href="${esc(s.url)}" target="_blank" rel="noopener" class="detail-url">${esc(s.url)}
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
       </div>
       <div class="detail-actions">
-        <button type="button" class="btn-outline" id="btn-copy-url">COPY URL</button>
-        <button type="button" class="btn-primary" id="btn-rescan">RE-SCAN</button>
+        <button type="button" class="btn-outline" id="btn-copy-url">Copy URL</button>
+        <button type="button" class="btn-primary" id="btn-rescan">Re-scan</button>
       </div>
     </div>`;
   }
@@ -527,13 +755,64 @@
       case "Errors":
         return renderErrorsTab(s);
       case "Explore":
-        return `<div class="explore-box">
-          <div class="muted">Explore: интерактивный обзор конфигурации nginx (директивы, includes, locations).</div>
-          <pre class="explore-json">${esc(JSON.stringify(s, null, 2))}</pre>
-        </div>`;
+        return renderExploreTab(s);
       default:
         return "";
     }
+  }
+
+  function renderExploreTab(s) {
+    return `<div class="explore-box">
+      <div class="kpi-label" style="margin-bottom:0.5rem">Explain route</div>
+      <p class="muted" style="margin:0 0 1rem">Интерактивный разбор маршрутизации: server → location → proxy_pass / upstream.</p>
+      <div class="explore-form">
+        <input type="url" id="explore-url" placeholder="https://example.com/api/v1/users" value=""/>
+        <button type="button" class="btn-primary" id="explore-run" data-agent-url="${esc(s.url)}">Explain</button>
+      </div>
+      <div id="explore-result"><div class="empty-dashed">Введите URL и нажмите Explain</div></div>
+      <button type="button" class="explore-toggle" id="explore-raw-toggle">Показать raw snapshot JSON</button>
+      <pre class="explore-json hidden" id="explore-raw">${esc(JSON.stringify(s, null, 2))}</pre>
+    </div>`;
+  }
+
+  function renderExplainResult(data) {
+    if (!data) return '<div class="empty-dashed">Пустой ответ</div>';
+    const nodeLabel = (n) => {
+      if (!n) return "";
+      return n.args || n.arg || n.directive || n.block || "";
+    };
+    const chips = [
+      { label: "URL", value: data.url || "—" },
+      { label: "Server", value: nodeLabel(data.server) || "—" },
+      { label: "Location", value: nodeLabel(data.location) || "—" },
+      { label: "Upstream", value: data.upstream || "—" },
+      { label: "Proxy pass", value: data.proxy_pass || "—" },
+    ];
+    const steps = Array.isArray(data.trace) ? data.trace : [];
+    return `
+      <div class="explore-summary">${chips
+        .map(
+          (c) => `<div class="explore-chip">
+            <div class="explore-chip-label">${esc(c.label)}</div>
+            <div class="explore-chip-val">${esc(c.value)}</div>
+          </div>`
+        )
+        .join("")}</div>
+      <div class="explore-trace">${
+        steps.length
+          ? steps
+              .map(
+                (step, i) => `<div class="explore-step${step.matched ? " matched" : ""}">
+                  <div class="explore-step-idx">${i + 1}</div>
+                  <div class="explore-step-body">
+                    <div class="explore-step-name">${esc(step.step || "step")}</div>
+                    <div class="explore-step-detail">${esc(step.detail || "")}</div>
+                  </div>
+                </div>`
+              )
+              .join("")
+          : '<div class="empty-dashed">Trace пуст</div>'
+      }</div>`;
   }
 
   function renderDataTable(headers, rows) {
@@ -603,7 +882,7 @@
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap;font-family:var(--font-mono);font-size:0.6875rem;align-items:center">
         <span class="module-tag">upstream: ${esc(c.upstream)}</span>
         <span class="muted">→</span>
-        <span class="module-tag" style="color:var(--highlight);border-color:oklch(0.92 0.18 155 / 0.2);background:oklch(0.92 0.18 155 / 0.1)">location: ${esc(loc)}</span>
+        <span class="module-tag module-tag-hl">location: ${esc(loc)}</span>
         <span class="muted">${esc(c.agent)}</span>
       </div>
     </div>`;
@@ -655,71 +934,91 @@
     }
   }
 
-  function updateKpiCardEl(card, value, suffix, tone, pulse) {
+  function updateKpiCardEl(card, value, suffix, tone, pulse, delta) {
     if (!card) return;
     const valEl = card.querySelector(".kpi-value");
     if (valEl) {
       valEl.className = "kpi-value " + tone;
       valEl.textContent = value;
     }
-    const suffixEl = card.querySelector(".kpi-suffix");
+    const row = card.querySelector(".kpi-row");
+    let suffixEl = card.querySelector(".kpi-suffix");
     if (suffix) {
       if (suffixEl) suffixEl.textContent = suffix;
-      else if (valEl) valEl.insertAdjacentHTML("afterend", `<span class="kpi-suffix">${esc(suffix)}</span>`);
-    } else if (suffixEl) suffixEl.remove();
+      else if (row) row.insertAdjacentHTML("beforeend", `<span class="kpi-suffix">${esc(suffix)}</span>`);
+    } else if (suffixEl) {
+      suffixEl.remove();
+    }
     let pulseEl = card.querySelector(".kpi-pulse");
-    if (pulse && !pulseEl) {
-      card.querySelector(".kpi-row").insertAdjacentHTML("beforeend", '<span class="kpi-pulse"></span>');
+    const top = card.querySelector(".kpi-top");
+    if (pulse && !pulseEl && top) {
+      top.insertAdjacentHTML("beforeend", '<span class="kpi-pulse"></span>');
     } else if (!pulse && pulseEl) {
       pulseEl.remove();
     }
+    const body = card.querySelector(".kpi-body");
+    if (body) {
+      const existing = body.querySelector(".kpi-delta-row");
+      const html = renderKpiDelta(delta);
+      if (existing) {
+        if (html) existing.outerHTML = html;
+        else existing.remove();
+      } else if (html) {
+        body.insertAdjacentHTML("beforeend", html);
+      }
+    }
   }
 
-  function patchKpiGrid(kpi, delay) {
+  function patchKpiGrid(kpi) {
     const cards = document.querySelectorAll(".kpi-grid .kpi-card");
     if (cards.length < 4) return false;
     const critical = parseInt(kpi.critical_issues, 10) || 0;
-    updateKpiCardEl(cards[0], kpi.agents_online, kpi.agents_suffix, "t-primary", false);
-    updateKpiCardEl(cards[1], kpi.critical_issues, null, "t-danger", critical > 0);
-    updateKpiCardEl(cards[2], kpi.warnings, null, "t-warning", false);
-    updateKpiCardEl(cards[3], kpi.upstream_healthy, null, "t-highlight", false);
+    const d = kpi.deltas || {};
+    updateKpiCardEl(cards[0], kpi.agents_online, kpi.agents_suffix, "t-primary", false, d.agents_online);
+    updateKpiCardEl(cards[1], kpi.critical_issues, null, "t-danger", critical > 0, d.critical_issues);
+    updateKpiCardEl(cards[2], kpi.warnings, null, "t-warning", false, d.warnings);
+    updateKpiCardEl(cards[3], kpi.upstream_healthy, null, "t-highlight", false, d.upstream_healthy);
     return true;
   }
 
   function patchHealthOverview() {
-    const panel = document.querySelector(".overview-grid .panel");
+    const panel = document.querySelector(".overview-grid .health-panel");
     if (!panel) return false;
     const bars = state.health_bars;
     if (!bars || !bars.length) return false;
     const now = new Date();
     const labels = bars.map((_, i) => {
-      if (i === bars.length - 1) return "NOW";
+      if (i === bars.length - 1) return { text: "NOW", now: true };
       const m = new Date(now - (bars.length - 1 - i) * 60000);
-      return m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return { text: m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), now: false };
     });
+    const axisSparse = labels.filter((_, i) => i === 0 || i === Math.floor(labels.length / 2) || i === labels.length - 1);
     const chart = panel.querySelector(".health-chart");
     const axis = panel.querySelector(".health-axis");
     if (!chart || !axis) return false;
     chart.innerHTML = bars
       .map((b) => {
         const h = Math.max(8, Math.min(100, b.pct < 0 ? 50 : b.pct));
-        const op = 0.4 + (h / 100) * 0.5;
-        return `<div class="health-bar ${b.bad ? "bad" : "ok"}" style="height:${h}%;opacity:${op}" title="${esc(b.agent)}: ${Math.round(b.pct)}%"></div>`;
+        return `<div class="health-bar ${b.bad ? "bad" : "ok"}" style="height:${h}%" title="${esc(b.agent)}: ${Math.round(b.pct)}%"></div>`;
       })
       .join("");
-    axis.innerHTML = labels.map((l) => `<span>${esc(l)}</span>`).join("");
+    axis.innerHTML = axisSparse
+      .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "NOW" : l.text)}</span>`)
+      .join("");
     return true;
   }
 
   function patchSeverityPanel() {
-    const panels = document.querySelectorAll(".overview-grid .panel");
-    const panel = panels[1];
+    const panel = document.querySelector(".overview-grid .severity-panel-wrap");
     if (!panel) return false;
     const sev = state.severity;
+    const total = (sev.high || 0) + (sev.medium || 0) + (sev.low || 0);
+    const totalEl = panel.querySelector(".panel-total-val");
+    if (totalEl) totalEl.textContent = total;
     const rows = [
-      { label: "HIGH SEVERITY", pct: sev.high_pct, count: sev.high, fill: "severity-fill-high", text: "t-danger" },
-      { label: "MEDIUM SEVERITY", pct: sev.medium_pct, count: sev.medium, fill: "severity-fill-med", text: "t-warning" },
-      { label: "LOW SEVERITY", pct: sev.low_pct, count: sev.low, fill: "severity-fill-low", text: "t-primary" },
+      { label: "High severity", pct: sev.high_pct, count: sev.high, fill: "severity-fill-high", text: "t-danger", dot: "high" },
+      { label: "Medium severity", pct: sev.medium_pct, count: sev.medium, fill: "severity-fill-med", text: "t-warning", dot: "med" },
+      { label: "Low severity", pct: sev.low_pct, count: sev.low, fill: "severity-fill-low", text: "t-primary", dot: "low" },
     ];
     const body = panel.querySelector(".severity-panel");
     if (!body) return false;
@@ -727,8 +1026,11 @@
       .map(
         (r) => `<div>
             <div class="severity-row-head">
-              <span>${esc(r.label)}</span>
-              <span class="${r.text}">${r.pct}% (${r.count})</span>
+              <div class="severity-row-label"><span class="severity-row-dot ${r.dot}"></span>${esc(r.label)}</div>
+              <div class="severity-row-vals">
+                <span class="severity-row-count ${r.text}">${r.count}</span>
+                <span class="severity-row-pct">${r.pct}%</span>
+              </div>
             </div>
             <div class="severity-track"><div class="${r.fill}" style="width:${r.pct}%"></div></div>
           </div>`
@@ -738,7 +1040,30 @@
   }
 
   function patchOverview() {
-    if (!patchKpiGrid(state.kpi, 0)) return false;
+    const pane = $("#overview-pane");
+    const tabs = document.querySelector(".overview-tabs");
+    if (!pane || !tabs) return false;
+    const tabMeta = document.querySelector(".overview-tab-meta");
+    if (tabMeta) {
+      const svc = state.services || {};
+      tabMeta.textContent = svc.has_data
+        ? formatCount(svc.total_requests || 0) + " req · " + (svc.unique_services || 0) + " services"
+        : "access.log";
+    }
+    document.querySelectorAll("[data-overview-tab]").forEach((el) => {
+      el.classList.toggle("active", el.dataset.overviewTab === overviewTab);
+    });
+    if (overviewTab === "services") {
+      pane.innerHTML = renderServicesApps();
+      bindViewEvents();
+      return true;
+    }
+    if (!document.querySelector(".kpi-grid")) {
+      pane.innerHTML = renderFleetOverview();
+      bindViewEvents();
+      return true;
+    }
+    if (!patchKpiGrid(state.kpi)) return false;
     if (!patchHealthOverview()) return false;
     if (!patchSeverityPanel()) return false;
     const snaps = state.snapshots || [];
@@ -749,7 +1074,7 @@
     if (feed) {
       feed.innerHTML = shown.length ? shown.map(renderAgentRow).join("") : '<div class="empty">Агенты не настроены</div>';
     }
-    if (meta) meta.textContent = "Showing 1-" + shown.length + " of " + list.length + " agents";
+    if (meta) meta.textContent = "1–" + shown.length + " of " + list.length;
     const analytics = document.querySelector(".analytics-grid");
     if (analytics) analytics.outerHTML = renderAnalyticsPanels();
     bindViewEvents();
@@ -758,11 +1083,16 @@
 
   function patchAgents() {
     const snaps = filterSnapshots(state.snapshots || []);
-    if (!patchKpiGrid(kpiFromSnapshots(snaps), 0)) {
-      return false;
-    }
     const wrap = document.querySelector(".agent-table-wrap");
     if (!wrap) return false;
+    const total = snaps.length;
+    const online = snaps.filter((s) => s.status === "online").length;
+    const warning = snaps.filter((s) => s.status === "warning").length;
+    const critical = snaps.filter((s) => s.status === "offline").length;
+    const values = [String(total), String(online), String(warning), String(critical)];
+    document.querySelectorAll(".stat-grid .stat-card-val").forEach((el, i) => {
+      if (values[i] != null) el.textContent = values[i];
+    });
     wrap.innerHTML = renderAgentTable(snaps);
     bindViewEvents();
     return true;
@@ -875,7 +1205,6 @@
   function render(options) {
     const soft = options && options.soft === true;
     animate = !soft;
-    if (!soft) renderNav();
     const view = $("#view");
     const key = routeKey();
     if (soft && viewMounted && view.dataset.route === key && state && patchView()) {
@@ -914,6 +1243,12 @@
         render();
       });
     });
+    document.querySelectorAll("[data-overview-tab]").forEach((el) => {
+      el.addEventListener("click", () => {
+        overviewTab = el.dataset.overviewTab;
+        render();
+      });
+    });
     const copyBtn = $("#btn-copy-url");
     if (copyBtn) {
       copyBtn.addEventListener("click", () => {
@@ -923,24 +1258,83 @@
     }
     const rescanBtn = $("#btn-rescan");
     if (rescanBtn) rescanBtn.addEventListener("click", () => refresh(true));
+    const addBtn = $("#btn-add-agent");
+    if (addBtn) addBtn.addEventListener("click", () => openAgentModal());
+    const exploreRun = $("#explore-run");
+    if (exploreRun) {
+      exploreRun.addEventListener("click", () => runExplore(exploreRun.dataset.agentUrl));
+      const urlInput = $("#explore-url");
+      if (urlInput) {
+        urlInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            runExplore(exploreRun.dataset.agentUrl);
+          }
+        });
+      }
+    }
+    const rawToggle = $("#explore-raw-toggle");
+    if (rawToggle) {
+      rawToggle.addEventListener("click", () => {
+        const raw = $("#explore-raw");
+        if (!raw) return;
+        const open = !raw.classList.contains("hidden");
+        raw.classList.toggle("hidden", open);
+        rawToggle.textContent = open ? "Показать raw snapshot JSON" : "Скрыть raw snapshot JSON";
+      });
+    }
+  }
+
+  async function runExplore(agentURL) {
+    const input = $("#explore-url");
+    const out = $("#explore-result");
+    if (!input || !out) return;
+    const url = input.value.trim();
+    if (!url) {
+      out.innerHTML = '<div class="empty-dashed">Укажите URL маршрута</div>';
+      return;
+    }
+    out.innerHTML = '<div class="muted" style="font-family:var(--font-mono);font-size:0.75rem">Loading…</div>';
+    try {
+      const q = new URLSearchParams({ agent: agentURL, url: url });
+      const r = await fetch("/api/v1/explain?" + q.toString(), { headers: headers() });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const data = await r.json();
+      out.innerHTML = renderExplainResult(data);
+    } catch (e) {
+      out.innerHTML = `<div class="empty-dashed t-danger">${esc("Ошибка explain: " + e.message)}</div>`;
+    }
+  }
+
+  function openAgentModal() {
+    const modal = $("#agent-modal");
+    const err = $("#agent-error");
+    if (err) {
+      err.textContent = "";
+      err.classList.add("hidden");
+    }
+    $("#agent-url").value = "";
+    $("#agent-region").value = "";
+    $("#agent-name").value = "";
+    modal.showModal();
   }
 
   function updateMeta() {
     if (!state) return;
     const meta = state.meta || {};
-    $("#meta-status").textContent = "SYSTEM " + (meta.system_status || "—");
+    const status = meta.system_status || "—";
+    const statusLabel = status === "nominal" || status === "ok" || status === "healthy"
+      ? "System nominal"
+      : "System " + status;
+    $("#meta-status").textContent = statusLabel;
     const sec = meta.refresh_interval || 30;
-    $("#meta-refresh").textContent = "AUTO-REFRESH: " + sec + "S";
+    $("#meta-refresh").textContent = sec + "s";
     const online = meta.agents_online || 0;
     const offline = (meta.agents_total || 0) - online;
     $("#footer-stats").innerHTML = `
-      <div class="footer-stat"><span class="footer-dot" style="background:var(--primary)"></span><span class="t-primary">${online} ONLINE</span></div>
-      <div class="footer-stat"><span class="footer-dot" style="background:var(--destructive)"></span><span class="t-danger">${offline} OFFLINE</span></div>`;
-  }
-
-  function updateTokenPreview() {
-    const t = token();
-    $("#token-preview").textContent = t ? t.slice(0, 14) + "…" + t.slice(-2) : "не задан";
+      <div class="footer-stat online"><span class="footer-dot" style="background:var(--primary);animation:pulse-glow 2.2s infinite ease-in-out"></span>${online} online</div>
+      <div class="footer-stat offline"><span class="footer-dot" style="background:var(--destructive)"></span>${String(offline).padStart(2, "0")} offline</div>`;
+    renderNav();
   }
 
   function showError(msg) {
@@ -953,7 +1347,59 @@
     $("#error-banner").classList.add("hidden");
   }
 
+  const AUTH_REQUIRED = window.NGINX_LENS_AUTH_REQUIRED === true;
+  let refreshTimer = null;
+  let unlocked = !AUTH_REQUIRED;
+
+  function saveToken(value) {
+    const q = new URLSearchParams(location.search).get("token");
+    if (q) {
+      // токен из query один раз переносим в storage и чистим URL
+      const url = new URL(location.href);
+      url.searchParams.delete("token");
+      history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+    localStorage.setItem("nginx_lens_hub_token", value);
+  }
+
+  function clearToken() {
+    localStorage.removeItem("nginx_lens_hub_token");
+  }
+
+  function showGate(message) {
+    unlocked = false;
+    $("#app").classList.add("hidden");
+    const gate = $("#auth-gate");
+    gate.classList.remove("hidden");
+    const err = $("#auth-error");
+    if (message) {
+      err.textContent = message;
+      err.classList.remove("hidden");
+    } else {
+      err.textContent = "";
+      err.classList.add("hidden");
+    }
+    const input = $("#auth-token-input");
+    if (input) {
+      input.value = token();
+      setTimeout(() => input.focus(), 50);
+    }
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
+  function enterApp() {
+    unlocked = true;
+    $("#auth-gate").classList.add("hidden");
+    $("#app").classList.remove("hidden");
+    const logout = $("#btn-logout");
+    if (logout) logout.classList.toggle("hidden", !AUTH_REQUIRED);
+  }
+
   async function refresh(soft) {
+    if (!unlocked) return;
     const view = $("#view");
     const scrollTop = soft && view ? view.scrollTop : 0;
     try {
@@ -962,44 +1408,145 @@
       render({ soft: soft === true });
       if (soft && view) view.scrollTop = scrollTop;
     } catch (e) {
+      if (e.code === 401 && AUTH_REQUIRED) {
+        clearToken();
+        showGate("Токен неверный или устарел. Введите hub token снова.");
+        return;
+      }
       showError("Ошибка загрузки: " + e.message);
     }
   }
 
-  function initTokenModal() {
-    const modal = $("#token-modal");
-    const input = $("#token-input");
-    $("#btn-token").addEventListener("click", () => {
-      input.value = token();
-      modal.showModal();
-    });
-    modal.querySelector("form").addEventListener("submit", (e) => {
+  function startRefreshLoop() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => refresh(true), REFRESH_MS);
+  }
+
+  async function tryUnlockWithStoredToken() {
+    if (!AUTH_REQUIRED) {
+      enterApp();
+      await refresh(false);
+      startRefreshLoop();
+      return;
+    }
+    if (!token()) {
+      showGate();
+      return;
+    }
+    try {
+      state = await fetchState();
+      enterApp();
+      hideError();
+      render({ soft: false });
+      startRefreshLoop();
+    } catch (e) {
+      clearToken();
+      showGate(e.code === 401 ? "Токен неверный. Попробуйте ещё раз." : "Не удалось проверить токен: " + e.message);
+    }
+  }
+
+  function initAuthGate() {
+    const form = $("#auth-form");
+    if (!form) return;
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      localStorage.setItem("nginx_lens_hub_token", input.value.trim());
-      modal.close();
-      updateTokenPreview();
-      refresh(true);
+      const input = $("#auth-token-input");
+      const err = $("#auth-error");
+      const btn = $("#auth-submit");
+      const value = (input.value || "").trim();
+      if (!value) {
+        err.textContent = "Введите токен";
+        err.classList.remove("hidden");
+        return;
+      }
+      btn.disabled = true;
+      err.classList.add("hidden");
+      saveToken(value);
+      try {
+        state = await fetchState();
+        enterApp();
+        render({ soft: false });
+        startRefreshLoop();
+      } catch (ex) {
+        clearToken();
+        err.textContent = ex.code === 401 ? "Неверный токен" : "Ошибка: " + ex.message;
+        err.classList.remove("hidden");
+        input.focus();
+      } finally {
+        btn.disabled = false;
+      }
     });
-    $("#token-clear").addEventListener("click", () => {
-      localStorage.removeItem("nginx_lens_hub_token");
-      input.value = "";
-      updateTokenPreview();
+    const logout = $("#btn-logout");
+    if (logout) {
+      logout.addEventListener("click", () => {
+        clearToken();
+        showGate();
+      });
+    }
+  }
+
+  function initAgentModal() {
+    const modal = $("#agent-modal");
+    const form = $("#agent-form");
+    if (!modal || !form) return;
+    $("#agent-cancel").addEventListener("click", () => modal.close());
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = $("#agent-error");
+      err.classList.add("hidden");
+      const body = {
+        url: $("#agent-url").value.trim(),
+        region: $("#agent-region").value.trim(),
+        name: $("#agent-name").value.trim(),
+      };
+      try {
+        const r = await fetch("/api/v1/agents", {
+          method: "POST",
+          headers: { ...headers(), "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(text || "HTTP " + r.status);
+        }
+        modal.close();
+        await refresh(false);
+        navigate("agents");
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove("hidden");
+      }
     });
   }
 
   window.addEventListener("hashchange", () => {
+    if (!unlocked) return;
     route = parseRoute();
     render();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (!unlocked) return;
+      e.preventDefault();
+      const input = $("#search-input");
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
   });
 
   $("#btn-refresh").addEventListener("click", () => refresh(true));
   $("#search-input").addEventListener("input", (e) => {
     searchQuery = e.target.value.trim();
-    render();
+    if (unlocked) render();
   });
 
-  initTokenModal();
-  updateTokenPreview();
-  refresh(false);
-  setInterval(() => refresh(true), REFRESH_MS);
+  initAuthGate();
+  initAgentModal();
+  // Если в URL есть ?token= — сохранить до проверки
+  const bootToken = new URLSearchParams(location.search).get("token");
+  if (bootToken) saveToken(bootToken.trim());
+  tryUnlockWithStoredToken();
 })();

@@ -151,7 +151,8 @@ web:
     token: ""
     agent_token: ""
     agents:
-      - http://localhost:8088
+      - url: http://localhost:8088
+        region: LOCAL
     cors_origins:
       - "*"
     refresh_interval: 30

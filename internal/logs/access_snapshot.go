@@ -27,6 +27,14 @@ type AccessSnapshot struct {
 	WindowSeconds float64                   `json:"window_seconds"`
 	ByUpstream    map[string]UpstreamAccess `json:"by_upstream,omitempty"`
 	ByPath        map[string]PathAccess     `json:"by_path,omitempty"`
+	TopPaths      []PathCount               `json:"top_paths,omitempty"`
+}
+
+// PathCount — топ endpoint по числу запросов (все запросы, не только direct).
+type PathCount struct {
+	Path      string `json:"path"`
+	Requests  int    `json:"requests"`
+	Status5xx int    `json:"status_5xx"`
 }
 
 // PathAccess — метрики access по URI (запросы без upstream_addr в логе).
@@ -171,6 +179,7 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 	upRT := make(map[string][]float64)
 	upCounts := make(map[string]*struct{ req, s5, s502 int })
 	pathDirect := make(map[string]*struct{ req, s5, s502 int })
+	pathAll := make(map[string]*struct{ req, s5 int })
 
 	for _, l := range lines {
 		if l.Status == 404 {
@@ -207,8 +216,17 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 		if l.ResponseTime > 0 {
 			upRT[upKey] = append(upRT[upKey], l.ResponseTime)
 		}
+		path := normalizeAccessPath(l.Path)
+		if path != "" {
+			if pathAll[path] == nil {
+				pathAll[path] = &struct{ req, s5 int }{}
+			}
+			pathAll[path].req++
+			if l.Status >= 500 {
+				pathAll[path].s5++
+			}
+		}
 		if l.Upstream == "" {
-			path := normalizeAccessPath(l.Path)
 			if path != "" {
 				if pathDirect[path] == nil {
 					pathDirect[path] = &struct{ req, s5, s502 int }{}
@@ -246,7 +264,26 @@ func computeAccessSnapshot(lines []LogLine) *AccessSnapshot {
 	for path, c := range pathDirect {
 		snap.ByPath[path] = PathAccess{Requests: c.req, Status5xx: c.s5, Status502: c.s502}
 	}
+	snap.TopPaths = topPathCounts(pathAll, 25)
 	return snap
+}
+
+// topPathCounts — топ-N endpoints по числу запросов.
+func topPathCounts(m map[string]*struct{ req, s5 int }, n int) []PathCount {
+	out := make([]PathCount, 0, len(m))
+	for path, c := range m {
+		out = append(out, PathCount{Path: path, Requests: c.req, Status5xx: c.s5})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Requests == out[j].Requests {
+			return out[i].Path < out[j].Path
+		}
+		return out[i].Requests > out[j].Requests
+	})
+	if n > 0 && len(out) > n {
+		out = out[:n]
+	}
+	return out
 }
 
 func normalizeAccessPath(path string) string {

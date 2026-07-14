@@ -15,6 +15,9 @@ import (
 // ---------- HTTP agent server ----------
 // /healthz, /version, /snapshot, /explain, /metrics.
 
+// startedAt — момент старта процесса агента для uptime в meta.
+var startedAt = time.Now().UTC()
+
 // NewRouter создаёт HTTP router для agent.
 func NewRouter() http.Handler {
 	r := chi.NewRouter()
@@ -64,9 +67,12 @@ func handleSnapshot(w http.ResponseWriter, _ *http.Request) {
 		"module_groups":     snap.ModuleGroups,
 		"module_issues":     snap.ModuleIssues,
 		"meta": map[string]interface{}{
-			"hostname":      hostname,
-			"timestamp":     time.Now().UTC().Format(time.RFC3339),
-			"agent_version": version.Version,
+			"hostname":       hostname,
+			"timestamp":      time.Now().UTC().Format(time.RFC3339),
+			"agent_version":  version.Version,
+			"started_at":     startedAt.Format(time.RFC3339),
+			"uptime_seconds": int(time.Since(startedAt).Seconds()),
+			"region":         os.Getenv("NGINX_LENS_REGION"),
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")

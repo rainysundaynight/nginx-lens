@@ -7,41 +7,81 @@
   <meta name="description" content="Real-time observability dashboard for nginx agents"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600&family=Sora:wght@400;600;800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="/static/dashboard.css"/>
 </head>
 <body>
-  <div class="layout" id="app">
+  <!-- ---------- Ambient layer ---------- -->
+  <!-- Фоновый mesh и точечная сетка для атмосферы светлой темы -->
+  <div class="ambient ambient-mesh" aria-hidden="true"></div>
+  <div class="ambient ambient-dots" aria-hidden="true"></div>
+
+  <!-- ---------- Auth gate ---------- -->
+  <!-- Экран входа: показывать если web.hub.token задан и пользователь ещё не авторизован -->
+  <div class="auth-gate hidden" id="auth-gate">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-icon auth-brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+        </div>
+        <div>
+          <div class="auth-title">nginx-lens hub</div>
+          <div class="auth-sub">v{{ version }}</div>
+        </div>
+      </div>
+      <h1 class="auth-heading">Вход</h1>
+      <p class="auth-desc">Введите hub token (<code>web.hub.token</code>), чтобы открыть дашборд.</p>
+      <form id="auth-form" class="auth-form">
+        <label class="modal-label" for="auth-token-input">Hub Token</label>
+        <input type="password" id="auth-token-input" placeholder="lens_live_…" autocomplete="current-password" required/>
+        <p class="modal-error hidden" id="auth-error" role="alert"></p>
+        <button type="submit" class="btn-primary auth-submit" id="auth-submit">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ---------- App shell ---------- -->
+  <!-- Каркас: сайдбар + основная колонка (header / view / footer) -->
+  <div class="layout hidden" id="app">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
-        <div class="sidebar-title">OBSERVABILITY HUB</div>
-        <div class="sidebar-sub">Nginx Engine v{{ version }}</div>
+        <div class="brand-mark">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          </div>
+          <span class="brand-status"></span>
+        </div>
+        <div>
+          <div class="sidebar-title">nginx-lens</div>
+          <div class="sidebar-sub">hub v{{ version }}</div>
+        </div>
       </div>
       <nav class="sidebar-nav" id="nav"></nav>
       <div class="sidebar-foot">
         <a class="sidebar-link" href="https://github.com/rainysundaynight/nginx-lens/blob/main/docs/README.md" target="_blank" rel="noopener">
-          <span>Документация</span>
-          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          <span>API Docs</span>
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </a>
-        <button class="sidebar-token" type="button" id="btn-token">
-          <span class="sidebar-token-label">Active Token</span>
-          <span class="sidebar-token-val" id="token-preview">—</span>
+        <button class="sidebar-logout hidden" type="button" id="btn-logout" title="Выйти и сменить токен">
+          Выйти
         </button>
       </div>
     </aside>
     <main class="main">
       <header class="header">
         <div class="header-search">
-          <span class="header-search-label">SCAN:</span>
-          <input type="text" id="search-input" placeholder="search upstream, IP, or CIDR..." autocomplete="off"/>
+          <svg class="header-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="search-input" placeholder="Найти upstream, IP или CIDR…" autocomplete="off"/>
+          <kbd class="header-kbd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-xs"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>K</kbd>
         </div>
         <div class="header-actions">
-          <div class="header-meta hidden-sm">
-            <span id="meta-refresh">AUTO-REFRESH: {{ refresh_interval }}S</span>
-            <span class="header-status" id="meta-status">SYSTEM —</span>
+          <div class="header-status-pill hidden-sm">
+            <span class="live-dot"><span class="live-ping"></span><span class="live-core"></span></span>
+            <span class="header-status" id="meta-status">System —</span>
+            <span class="header-refresh" id="meta-refresh">{{ refresh_interval }}s</span>
           </div>
           <button class="btn-primary" type="button" id="btn-refresh">
-            <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
             Обновить
           </button>
         </div>
@@ -49,23 +89,34 @@
       <div class="banner hidden" id="error-banner" role="alert"></div>
       <div class="view" id="view"></div>
       <footer class="footer">
-        <div id="footer-left">NGINX-LENS HUB V{{ version }} • BUILT FOR INFRASTRUCTURE PRECISION</div>
+        <div id="footer-left">nginx-lens hub · v{{ version }}</div>
         <div class="footer-stats" id="footer-stats"></div>
       </footer>
     </main>
   </div>
-  <dialog class="modal" id="token-modal">
-    <form method="dialog" class="modal-box">
-      <h2>Hub Token</h2>
-      <p class="muted">X-Nginx-Lens-Token для доступа к API агентов и hub.</p>
-      <input type="password" id="token-input" placeholder="lens_live_…" autocomplete="off"/>
+  <!-- ---------- Add agent modal ---------- -->
+  <!-- Регистрация runtime-агента через POST /api/v1/agents -->
+  <dialog class="modal" id="agent-modal">
+    <form method="dialog" class="modal-box" id="agent-form">
+      <h2>Add agent</h2>
+      <p class="muted">Агент сохранится в runtime-реестр hub (переживает рестарт). Для постоянного списка — YAML <code>web.hub.agents</code>.</p>
+      <label class="modal-label" for="agent-url">URL</label>
+      <input type="url" id="agent-url" placeholder="http://10.0.0.5:8088" required autocomplete="off"/>
+      <label class="modal-label" for="agent-region">Region</label>
+      <input type="text" id="agent-region" placeholder="EU-WEST" autocomplete="off"/>
+      <label class="modal-label" for="agent-name">Name (optional)</label>
+      <input type="text" id="agent-name" placeholder="lon-prod-nginx-01" autocomplete="off"/>
+      <p class="modal-error hidden" id="agent-error"></p>
       <div class="modal-actions">
-        <button type="button" class="btn-ghost" id="token-clear">Очистить</button>
-        <button type="submit" class="btn-primary">Сохранить</button>
+        <button type="button" class="btn-ghost" id="agent-cancel">Отмена</button>
+        <button type="submit" class="btn-primary">Добавить</button>
       </div>
     </form>
   </dialog>
-  <script>window.NGINX_LENS_REFRESH = {{ refresh_interval }} * 1000;</script>
+  <script>
+    window.NGINX_LENS_REFRESH = {{ refresh_interval }} * 1000;
+    window.NGINX_LENS_AUTH_REQUIRED = {{ auth_required }};
+  </script>
   <script src="/static/dashboard.js"></script>
 </body>
 </html>

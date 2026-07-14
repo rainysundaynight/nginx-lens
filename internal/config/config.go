@@ -233,13 +233,52 @@ type WebAgentConfig struct {
 
 // WebHubConfig — центральный hub.
 type WebHubConfig struct {
-	Host            string   `yaml:"host"`
-	Port            int      `yaml:"port"`
-	Token           string   `yaml:"token"`
-	AgentToken      string   `yaml:"agent_token"`
-	Agents          []string `yaml:"agents"`
-	CORSOrigins     []string `yaml:"cors_origins"`
-	RefreshInterval int      `yaml:"refresh_interval"`
+	Host            string     `yaml:"host"`
+	Port            int        `yaml:"port"`
+	Token           string     `yaml:"token"`
+	AgentToken      string     `yaml:"agent_token"`
+	Agents          []AgentRef `yaml:"agents"`
+	CORSOrigins     []string   `yaml:"cors_origins"`
+	RefreshInterval int        `yaml:"refresh_interval"`
+}
+
+// ---------- Hub agent entry ----------
+// URL агента с опциональными region/name; в YAML допускается строка или объект.
+
+// AgentRef — запись агента в конфигурации hub.
+type AgentRef struct {
+	URL    string `yaml:"url" json:"url"`
+	Region string `yaml:"region,omitempty" json:"region,omitempty"`
+	Name   string `yaml:"name,omitempty" json:"name,omitempty"`
+}
+
+// UnmarshalYAML принимает как "http://…" так и {url, region, name}.
+func (a *AgentRef) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		a.URL = value.Value
+		return nil
+	}
+	type raw AgentRef
+	var r raw
+	if err := value.Decode(&r); err != nil {
+		return err
+	}
+	*a = AgentRef(r)
+	if a.URL == "" {
+		return fmt.Errorf("hub agent: url required")
+	}
+	return nil
+}
+
+// AgentURLs возвращает только URL агентов из конфига.
+func (c WebHubConfig) AgentURLs() []string {
+	out := make([]string, 0, len(c.Agents))
+	for _, a := range c.Agents {
+		if a.URL != "" {
+			out = append(out, a.URL)
+		}
+	}
+	return out
 }
 
 // Loader загружает конфигурацию.
@@ -291,7 +330,7 @@ func DefaultConfig() Config {
 			Hub: WebHubConfig{
 				Host:            "0.0.0.0",
 				Port:            8089,
-				Agents:          []string{"http://localhost:8088"},
+				Agents:          []AgentRef{{URL: "http://localhost:8088"}},
 				CORSOrigins:     []string{"*"},
 				RefreshInterval: 30,
 			},
