@@ -9,7 +9,7 @@ import (
 )
 
 // ---------- Чтение сертификатов ----------
-// volume_map / хост, иначе docker exec cat — для SSL-аудита без bind-mount.
+// Пути из ssl_certificate (nginx.conf / conf.d); чтение: volume_map → хост → docker exec cat.
 
 // CertReadFile возвращает reader для AuditCertificates.
 func CertReadFile(cfg config.Config) analyzer.CertReadFile {

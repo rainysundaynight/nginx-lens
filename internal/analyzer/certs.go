@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 // ---------- SSL/TLS аудит сертификатов ----------
-// Проверка expiry, self-signed, hostname mismatch.
+// Пути — из ssl_certificate в дереве (nginx.conf + include/conf.d после parse / nginx -T).
 
 // CertIssue — проблема с сертификатом.
 type CertIssue struct {
@@ -27,7 +28,7 @@ type CertIssue struct {
 	File        string    `json:"file,omitempty"`
 }
 
-// CertReadFile читает PEM по логическому пути из nginx.conf.
+// CertReadFile читает PEM по логическому пути из nginx.conf / conf.d.
 type CertReadFile func(path string) ([]byte, error)
 
 // AuditCertificates проверяет SSL-сертификаты из конфигурации.
@@ -41,31 +42,53 @@ func AuditCertificatesRead(tree *parser.ConfigTree, warnDays int, readFile CertR
 		readFile = os.ReadFile
 	}
 	var issues []CertIssue
-	seen := make(map[string]struct{})
+	seenCert := make(map[string]struct{})
+	seenServerSSL := make(map[string]struct{})
+
+	// Все ssl_certificate из основного конфига и include (в т.ч. conf.d/*.conf).
+	for _, item := range Walk(tree) {
+		if item.Node.Directive != "ssl_certificate" {
+			continue
+		}
+		raw := strings.TrimSpace(strings.Split(item.Node.Args, " ")[0])
+		if raw == "" || raw == "ssl_certificate" || strings.HasPrefix(raw, "$") {
+			continue
+		}
+		sourceFile := item.Node.File
+		if sourceFile == "" {
+			sourceFile = certSourceFile(item)
+		}
+		certPath := resolveCertPath(raw, sourceFile)
+		serverNames := serverNamesFromAncestors(item)
+		key := certPath + "\x00" + serverNames
+		if _, ok := seenCert[key]; ok {
+			continue
+		}
+		seenCert[key] = struct{}{}
+		issues = append(issues, checkCertFile(certPath, serverNames, sourceFile, warnDays, readFile)...)
+	}
 
 	for _, item := range Walk(tree) {
 		if item.Node.Block != "server" {
 			continue
 		}
-		var certPath, serverNames string
+		hasCert := false
 		for _, sub := range WalkNodes(item.Node.Directives, &item.Node) {
-			if sub.Node.Directive == "ssl_certificate" {
-				certPath = strings.TrimSpace(strings.Split(sub.Node.Args, " ")[0])
+			if sub.Node.Directive != "ssl_certificate" {
+				continue
 			}
-			if sub.Node.Directive == "server_name" {
-				serverNames = sub.Node.Args
+			raw := strings.TrimSpace(strings.Split(sub.Node.Args, " ")[0])
+			if raw != "" && raw != "ssl_certificate" && !strings.HasPrefix(raw, "$") {
+				hasCert = true
+				break
 			}
 		}
-		if certPath == "" || certPath == "ssl_certificate" {
+		sk := item.Node.File + "\x00" + fmt.Sprintf("%d", item.Node.Line)
+		if _, ok := seenServerSSL[sk]; ok {
 			continue
 		}
-		key := certPath + "\x00" + serverNames
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		issues = append(issues, checkCertFile(certPath, serverNames, item.Node.File, warnDays, readFile)...)
-		issues = append(issues, auditServerSSL(item, certPath != "")...)
+		seenServerSSL[sk] = struct{}{}
+		issues = append(issues, auditServerSSL(item, hasCert)...)
 	}
 	return issues
 }
@@ -78,6 +101,58 @@ func defaultCertReader(volumeMap map[string]string) CertReadFile {
 		}
 		return os.ReadFile(hostPath)
 	}
+}
+
+// resolveCertPath приводит относительный путь ssl_certificate к абсолютному от файла конфига.
+func resolveCertPath(certPath, sourceFile string) string {
+	if certPath == "" {
+		return certPath
+	}
+	if filepath.IsAbs(certPath) {
+		return filepath.Clean(certPath)
+	}
+	if sourceFile == "" {
+		return filepath.Clean(certPath)
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(sourceFile), certPath))
+}
+
+func certSourceFile(item WalkItem) string {
+	if item.Parent != nil && item.Parent.File != "" {
+		return item.Parent.File
+	}
+	for i := len(item.Ancestors) - 1; i >= 0; i-- {
+		if item.Ancestors[i] != nil && item.Ancestors[i].File != "" {
+			return item.Ancestors[i].File
+		}
+	}
+	return ""
+}
+
+func serverNamesFromAncestors(item WalkItem) string {
+	server := nearestServer(item)
+	if server == nil {
+		return ""
+	}
+	var names []string
+	for _, sub := range WalkNodes(server.Directives, server) {
+		if sub.Node.Directive == "server_name" {
+			names = append(names, strings.Fields(sub.Node.Args)...)
+		}
+	}
+	return strings.Join(names, " ")
+}
+
+func nearestServer(item WalkItem) *parser.Node {
+	if item.Parent != nil && item.Parent.Block == "server" {
+		return item.Parent
+	}
+	for i := len(item.Ancestors) - 1; i >= 0; i-- {
+		if item.Ancestors[i] != nil && item.Ancestors[i].Block == "server" {
+			return item.Ancestors[i]
+		}
+	}
+	return nil
 }
 
 // CertTimelineEntry — точка таймлайна истечения сертификата.
