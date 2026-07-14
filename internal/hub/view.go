@@ -148,9 +148,11 @@ type HubIssueRow struct {
 // HubCertRow — сертификат.
 type HubCertRow struct {
 	Domain   string `json:"domain"`
+	Path     string `json:"path,omitempty"`
 	Issuer   string `json:"issuer"`
 	Expires  string `json:"expires"`
 	DaysLeft int    `json:"days_left"`
+	Status   string `json:"status,omitempty"`
 }
 
 // HubBlastRow — blast entry.
@@ -610,6 +612,7 @@ func parseUpstreams(raw map[string]interface{}) []HubUpstreamRow {
 func parseCerts(raw map[string]interface{}) []HubCertRow {
 	timeline, _ := raw["cert_timeline"].([]interface{})
 	var rows []HubCertRow
+	seen := make(map[string]struct{})
 	for _, t := range timeline {
 		m, _ := t.(map[string]interface{})
 		if m == nil {
@@ -619,12 +622,46 @@ func parseCerts(raw map[string]interface{}) []HubCertRow {
 		if ts, ok := m["expires_at"].(string); ok && len(ts) >= 10 {
 			exp = ts[:10]
 		}
+		domain := stringVal(m["server_name"])
+		path := stringVal(m["cert_path"])
+		key := path + "\x00" + domain
+		seen[key] = struct{}{}
+		issuer := stringVal(m["issuer"])
+		if issuer == "" {
+			issuer = "—"
+		}
+		status := stringVal(m["status"])
+		if status == "cert_ok" {
+			status = "ok"
+		}
 		rows = append(rows, HubCertRow{
-			Domain:   stringVal(m["server_name"]),
-			Issuer:   "—",
-			Expires:  exp,
-			DaysLeft: int(floatVal(m["days_left"])),
+			Domain: domain, Path: path, Issuer: issuer,
+			Expires: exp, DaysLeft: int(floatVal(m["days_left"])), Status: status,
 		})
+	}
+	// Запасной путь: cert_issues без expires (not_found и т.п.).
+	if issues, ok := raw["cert_issues"].([]interface{}); ok {
+		for _, it := range issues {
+			m, _ := it.(map[string]interface{})
+			if m == nil {
+				continue
+			}
+			path := stringVal(m["cert_path"])
+			domain := stringVal(m["server_name"])
+			key := path + "\x00" + domain
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			typ := stringVal(m["type"])
+			if typ != "cert_not_found" && typ != "cert_invalid_pem" {
+				continue
+			}
+			seen[key] = struct{}{}
+			rows = append(rows, HubCertRow{
+				Domain: domain, Path: path, Issuer: "—",
+				Expires: "—", DaysLeft: 0, Status: typ,
+			})
+		}
 	}
 	return rows
 }
@@ -723,8 +760,16 @@ func buildCorrelations(item map[string]interface{}, snap HubSnapshot) []HubCorre
 				}
 			}
 		}
+		errTotal := int(floatVal(m["error_total"]))
+		access5xx := floatVal(m["access_5xx_pct"])
+		access502 := int(floatVal(m["access_502"]))
+		connectFail := int(floatVal(m["error_connect_failed"]))
+		// Не показываем «шумные» корреляции без реальных ошибок.
+		if errTotal == 0 && access5xx <= 0 && access502 == 0 && connectFail == 0 {
+			continue
+		}
 		sev := "med"
-		if floatVal(m["access_5xx_pct"]) > 10 || floatVal(m["error_total"]) > 50 {
+		if access5xx > 10 || errTotal > 50 {
 			sev = "high"
 		}
 		out = append(out, HubCorrelation{
@@ -732,9 +777,9 @@ func buildCorrelations(item map[string]interface{}, snap HubSnapshot) []HubCorre
 			Time:     time.Now().Format("2006-01-02 15:04:05"),
 			Upstream: stringVal(m["upstream"]),
 			Error: fmt.Sprintf("access 5xx %.1f%%, errors %d, connect %d",
-				floatVal(m["access_5xx_pct"]), int(floatVal(m["error_total"])), int(floatVal(m["error_connect_failed"]))),
+				access5xx, errTotal, connectFail),
 			Locations: locs,
-			Matches:   int(floatVal(m["error_total"])) + int(floatVal(m["access_502"])),
+			Matches:   errTotal + access502,
 			Severity:  sev,
 			Agent:     snap.Name,
 		})

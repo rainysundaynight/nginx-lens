@@ -6,22 +6,29 @@
   // Группы Monitor / Analyze и иконки пунктов сайдбара
   const NAV_GROUPS = [
     {
-      label: "Monitor",
+      label: "Мониторинг",
       items: [
-        { label: "Overview", path: "", icon: "activity", badge: null },
-        { label: "Agents", path: "agents", icon: "layers", badge: "agents" },
+        { label: "Обзор", path: "", icon: "activity", badge: null },
+        { label: "Агенты", path: "agents", icon: "layers", badge: "agents" },
       ],
     },
     {
-      label: "Analyze",
+      label: "Анализ",
       items: [
-        { label: "Snapshots", path: "snapshots", icon: "camera", badge: null },
-        { label: "Correlation", path: "correlation", icon: "git-branch", badge: null },
-        { label: "Blast-radius", path: "blast-radius", icon: "radio", badge: "blast" },
+        { label: "Конфигурации", path: "nodes", icon: "camera", badge: null },
+        { label: "Корреляция", path: "correlation", icon: "git-branch", badge: null },
+        { label: "Зона поражения", path: "blast-radius", icon: "radio", badge: "blast" },
       ],
     },
   ];
-  const TABS = ["Upstream", "Build", "Issues", "Certs", "Blast-radius", "Errors", "Explore"];
+  const TABS = [
+    { id: "Upstream", label: "Upstream" },
+    { id: "Build", label: "Сборка" },
+    { id: "Certs", label: "Сертификаты" },
+    { id: "Blast-radius", label: "Зона поражения" },
+    { id: "Errors", label: "Ошибки" },
+    { id: "Explore", label: "Маршрут" },
+  ];
   const ICONS = {
     activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
@@ -100,7 +107,10 @@
   function parseRoute() {
     const hash = (location.hash || "#/").replace(/^#\/?/, "");
     const parts = hash.split("/").filter(Boolean);
-    if (parts[0] === "snapshots" && parts[1]) return { page: "snapshot-detail", id: decodeURIComponent(parts[1]) };
+    if ((parts[0] === "nodes" || parts[0] === "snapshots") && parts[1]) {
+      return { page: "snapshot-detail", id: decodeURIComponent(parts[1]) };
+    }
+    if (parts[0] === "snapshots") return { page: "nodes" };
     if (parts[0]) return { page: parts[0] };
     return { page: "overview" };
   }
@@ -165,10 +175,18 @@
   }
 
   function snapPreview(s) {
-    if (s.status === "offline") return { label: "Error Log", text: s.error || "Connection refused", bad: true };
-    if (s.issues && s.issues.length) return { label: "Latest Snapshot", text: s.issues[0].title, bad: false };
-    if (s.note) return { label: "Note", text: s.note, bad: false, empty: true };
-    return { label: "Latest Snapshot", text: "Нет новых issues", bad: false, empty: true };
+    if (s.status === "offline") return { label: "Ошибка", text: s.error || "Connection refused", bad: true };
+    if (s.access) {
+      return {
+        label: "Access",
+        text: "5xx " + s.access.status_5xx + " · p95 " + Math.round(s.access.p95_ms) + "ms",
+        bad: (s.access.status_5xx || 0) > 0,
+      };
+    }
+    if ((s.upstreams || []).length) {
+      return { label: "Upstream", text: s.upstreams[0].name + " · " + (s.upstreams[0].status || "—"), bad: false };
+    }
+    return { label: "Статус", text: "online", bad: false };
   }
 
   function renderNav() {
@@ -179,7 +197,7 @@
           const active =
             (item.path === "" && route.page === "overview") ||
             route.page === item.path ||
-            (item.path === "snapshots" && route.page === "snapshot-detail");
+            (item.path === "nodes" && route.page === "snapshot-detail");
           const badge = item.badge ? navBadge(item.badge) : "";
           return `<button type="button" class="nav-item${active ? " active" : ""}" data-nav="${esc(item.path)}">
             ${icon(item.icon)}
@@ -214,21 +232,17 @@
   }
 
   function renderKpiCards(k, delay) {
-    const critical = parseInt(k.critical_issues, 10) || 0;
     const d = k.deltas || {};
     const cards = [
       { label: "Агенты Online", value: k.agents_online, suffix: k.agents_suffix, tone: "t-primary", iconTone: "primary", icon: "users", delta: d.agents_online },
-      { label: "Critical Issues", value: k.critical_issues, tone: "t-danger", iconTone: "danger", icon: "alert-circle", pulse: critical > 0, delta: d.critical_issues },
-      { label: "Warnings", value: k.warnings, tone: "t-warning", iconTone: "warning", icon: "alert-triangle", delta: d.warnings },
       { label: "Upstream Healthy", value: k.upstream_healthy, tone: "t-highlight", iconTone: "highlight", icon: "activity", delta: d.upstream_healthy },
     ];
-    return `<section class="kpi-grid">${cards
+    return `<section class="kpi-grid kpi-grid-2">${cards
       .map(
         (c, i) => `<div class="kpi-card"${animAttr(delay + i * 80)}>
           <div class="kpi-ribbon ${c.iconTone}" aria-hidden="true"></div>
           <div class="kpi-top">
             <div class="kpi-icon ${c.iconTone}">${icon(c.icon)}</div>
-            ${c.pulse ? '<span class="kpi-pulse"></span>' : ""}
           </div>
           <div class="kpi-body">
             <div class="kpi-label">${esc(c.label)}</div>
@@ -254,13 +268,21 @@
     </div>`;
   }
 
+  function shortHost(name, maxLen) {
+    const s = String(name || "");
+    const max = maxLen || 16;
+    if (s.length <= max) return s;
+    const keep = Math.max(3, Math.floor((max - 1) / 2));
+    return s.slice(0, keep) + "…" + s.slice(-keep);
+  }
+
   function renderHealthOverview(bars) {
     if (!bars || !bars.length) {
       return `<div class="panel health-panel"${animAttr(120)}><div class="empty">Нет данных upstream</div></div>`;
     }
     const now = new Date();
     const labels = bars.map((_, i) => {
-      if (i === bars.length - 1) return { text: "NOW", now: true };
+      if (i === bars.length - 1) return { text: "сейчас", now: true };
       const m = new Date(now - (bars.length - 1 - i) * 60000);
       return { text: m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), now: false };
     });
@@ -268,10 +290,10 @@
     return `<div class="panel health-panel"${animAttr(120)}>
       <div class="panel-head">
         <div>
-          <h3 class="panel-title">Health Overview</h3>
+          <h3 class="panel-title">Состояние health</h3>
           <p class="panel-sub">Агрегированные health-сигналы по агентам · live</p>
         </div>
-        <span class="panel-badge"><span class="panel-badge-dot"></span>Live feed</span>
+        <span class="panel-badge"><span class="panel-badge-dot"></span>Live</span>
       </div>
       <div class="health-legend">
         <div class="health-legend-item"><span class="health-legend-swatch ok"></span>Healthy</div>
@@ -286,8 +308,11 @@
           })
           .join("")}</div>
       </div>
+      <div class="health-host-legend">${bars
+        .map((b) => `<span class="health-host-tick" title="${esc(b.agent)}">${esc(shortHost(b.agent, 14))}</span>`)
+        .join("")}</div>
       <div class="health-axis">${axisSparse
-        .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "NOW" : l.text)}</span>`)
+        .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "сейчас" : l.text)}</span>`)
         .join("")}</div>
     </div>`;
   }
@@ -333,8 +358,8 @@
     return `<section${animAttr(240)}>
       <div class="section-head">
         <div>
-          <h2 class="section-title">Active agents</h2>
-          <p class="section-sub">Мониторинг ключевых узлов кластера · клик — детальный snapshot</p>
+          <h2 class="section-title">Активные агенты</h2>
+          <p class="section-sub">Мониторинг ключевых узлов · клик — детальная конфигурация</p>
         </div>
         <div class="section-meta">1–${shown.length} of ${list.length}</div>
       </div>
@@ -346,7 +371,7 @@
     const st = agentStatusLabel(s.status);
     const prev = snapPreview(s);
     const i = String((idx ?? 0) + 1).padStart(2, "0");
-    const action = st.critical ? "Correlate" : "View raw";
+    const action = st.critical ? "Корреляция" : "Открыть";
     const btnCls = st.critical ? "btn-outline btn-danger-outline" : "btn-outline";
     return `<div class="agent-row${st.critical ? " critical" : ""}" data-snap="${esc(s.id)}" data-action="${st.critical ? "correlation" : "detail"}">
       <div class="agent-idx ${st.critical ? "bad" : "ok"}">${i}</div>
@@ -377,14 +402,14 @@
     const topBlast = blastItems.slice(0, 3);
     return `<div class="analytics-grid"${animAttr(300)}>
       <div class="analytics-panel">
-        <h4 class="analytics-title">Error Log Correlation (upstream → error log)</h4>
+        <h4 class="analytics-title">Корреляция error.log (upstream → error log)</h4>
         ${
           corr
             ? `<div class="analytics-log">
                 <div class="t-danger" style="opacity:0.8;margin-bottom:0.25rem">[error] ${esc(corr.error)}</div>
-                <div class="analytics-indent">↳ Found match in upstream [${esc(corr.upstream)}]<br/>↳ Target Location: ${esc((corr.locations && corr.locations[0]) || "—")}</div>
+                <div class="analytics-indent">↳ upstream [${esc(corr.upstream)}]<br/>↳ location: ${esc((corr.locations && corr.locations[0]) || "—")}</div>
               </div>`
-            : '<div class="muted" style="font-family:var(--font-mono);font-size:0.6875rem">Нет корреляций</div>'
+            : '<div class="muted" style="font-family:var(--font-mono);font-size:0.6875rem">Нет ошибок для корреляции (нужны access/error logs у агента)</div>'
         }
       </div>
       <div class="analytics-panel">
@@ -430,15 +455,14 @@
 
   function renderFleetOverview() {
     const snaps = state.snapshots || [];
-    return `
+    return `<div class="fleet-stack">
       ${renderKpiCards(state.kpi, 0)}
-      <div class="overview-grid">
+      <div class="overview-grid overview-grid-single">
         ${renderHealthOverview(state.health_bars)}
-        ${renderSeverityPanel(state.severity)}
       </div>
       ${renderAgentsFeed(snaps)}
       ${renderAnalyticsPanels()}
-    `;
+    </div>`;
   }
 
   function formatCount(n) {
@@ -564,10 +588,9 @@
     ];
     return `
       ${pageHeader(
-        "Section · 01",
-        "Agents",
-        "Парк nginx-агентов. Кликните по строке для детального snapshot.",
-        '<button type="button" class="btn-primary" id="btn-add-agent">+ Add agent</button>'
+        "Раздел · 01",
+        "Агенты",
+        "Парк nginx-агентов из web.hub.agents. Кликните по строке для детальной конфигурации."
       )}
       <div class="stat-grid">${stats
         .map(
@@ -609,7 +632,7 @@
   function renderSnapshotsList() {
     const snaps = filterSnapshots(state.snapshots || []);
     return `
-      ${pageHeader("Section · 02", "Snapshots", "Снимки конфигурации nginx по каждому агенту. Откройте карточку для полного анализа.")}
+      ${pageHeader("Раздел · 02", "Конфигурации", "Конфигурации nginx с каждого агента. Откройте карточку для полного разбора.")}
       <div class="snap-grid">${snaps.length ? snaps.map(renderSnapCard).join("") : '<div class="empty">Нет агентов</div>'}</div>
     `;
   }
@@ -635,12 +658,6 @@
         </div>
         <svg class="snap-card-chevron icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
       </div>
-      <div class="snap-scores">
-        <div><div class="score-cell-label">Score</div><div class="score-cell-val t-primary">${s.config_score}<span class="kpi-suffix">/100</span></div></div>
-        <div><div class="score-cell-label">High</div><div class="score-cell-val t-danger">${s.severity.high}</div></div>
-        <div><div class="score-cell-label">Med</div><div class="score-cell-val t-warning">${s.severity.med}</div></div>
-        <div><div class="score-cell-label">Low</div><div class="score-cell-val t-highlight">${s.severity.low}</div></div>
-      </div>
       <div class="snap-card-url">nginx/${esc(s.version || "—")} · upd: ${esc(s.updated_at)}</div>
     </div>`;
   }
@@ -648,59 +665,20 @@
   function renderSnapshotDetail(id) {
     const s = (state.snapshots || []).find((x) => x.id === id);
     if (!s) {
-      return `${pageHeader("", "Snapshot не найден", "")}<a class="back-link" href="#/snapshots">← Назад к списку</a>`;
+      return `${pageHeader("", "Конфигурация не найдена", "")}<a class="back-link" href="#/nodes">← К списку</a>`;
     }
     if (s.status === "offline") {
       return `
-        <a class="back-link" href="#/snapshots">← Back to Snapshots</a>
+        <a class="back-link" href="#/nodes">← К списку конфигураций</a>
         ${renderDetailHeader(s)}
-        <div class="panel"><div class="panel-title" style="margin-bottom:0.75rem">Agent Unreachable</div><pre class="explore-json">${esc(s.error)}</pre></div>
+        <div class="panel"><div class="panel-title" style="margin-bottom:0.75rem">Агент недоступен</div><pre class="explore-json">${esc(s.error)}</pre></div>
       `;
     }
-    const cats = s.categories || {};
-    const ib = s.issues_breakdown || {};
     return `
-      <a class="back-link" href="#/snapshots">← Back to Snapshots</a>
+      <a class="back-link" href="#/nodes">← К списку конфигураций</a>
       ${renderDetailHeader(s)}
-      <div class="score-banner"${animAttr()}>
-        <div>
-          <div class="kpi-label">Config Score</div>
-          <div class="kpi-row"><span class="score-big ${scoreTone(s.config_score)}">${s.config_score}</span><span class="kpi-suffix" style="font-size:1.125rem">/100</span></div>
-        </div>
-        <div style="flex:1;min-width:280px;max-width:28rem">
-          <div class="score-bar-track"><div class="score-bar-fill" style="width:${s.config_score}%"></div></div>
-          <div class="score-axis"><span>0</span><span>POOR · 50</span><span>GOOD · 80</span><span>100</span></div>
-        </div>
-      </div>
-      <div class="cat-grid">${[
-        ["Security", cats.security, ib.security],
-        ["Reliability", cats.reliability, ib.reliability],
-        ["Performance", cats.performance, ib.performance],
-        ["Maintainability", cats.maintainability, ib.maintainability],
-        ["Observability", cats.observability, ib.observability],
-      ]
-        .map(([label, score, issues]) => renderCategoryCard(label, score, issues))
-        .join("")}</div>
-      <div class="detail-summary">
-        <div class="panel">
-          <div class="kpi-label" style="margin-bottom:1rem">Severity Breakdown</div>
-          <div class="severity-cells">
-            <div class="severity-cell"><div class="severity-cell-label">High</div><div class="severity-cell-val t-danger">${s.severity.high}</div></div>
-            <div class="severity-cell"><div class="severity-cell-label">Med</div><div class="severity-cell-val t-warning">${s.severity.med}</div></div>
-            <div class="severity-cell"><div class="severity-cell-label">Low</div><div class="severity-cell-val t-highlight">${s.severity.low}</div></div>
-          </div>
-          ${s.note ? `<div class="note-box">⚠ ${esc(s.note)}</div>` : ""}
-        </div>
-        <div class="panel">
-          <div style="display:flex;justify-content:space-between;margin-bottom:1rem">
-            <div class="kpi-label" style="margin:0">Loaded Modules</div>
-            <span class="t-primary" style="font-family:var(--font-mono);font-size:0.625rem">${(s.modules || []).length} active</span>
-          </div>
-          <div class="module-tags">${(s.modules || []).map((m) => `<span class="module-tag">${esc(m)}</span>`).join("")}</div>
-        </div>
-      </div>
       <div>
-        <div class="tabs">${TABS.map((t) => `<button type="button" class="tab-btn${detailTab === t ? " active" : ""}" data-tab="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+        <div class="tabs">${TABS.map((t) => `<button type="button" class="tab-btn${detailTab === t.id ? " active" : ""}" data-tab="${esc(t.id)}">${esc(t.label)}</button>`).join("")}</div>
         <div class="tab-panel">${renderTabContent(s)}</div>
       </div>
     `;
@@ -710,15 +688,15 @@
     const tone = s.status === "offline" ? "offline" : s.status === "warning" ? "warning" : "";
     return `<div class="detail-header"${animAttr()}>
       <div>
-        <div class="page-eyebrow${eyebrowToneClass(tone)}"><span class="page-eyebrow-dot"></span>Snapshot · ${esc(s.id)}</div>
+        <div class="page-eyebrow${eyebrowToneClass(tone)}"><span class="page-eyebrow-dot"></span>Конфигурация · ${esc(s.id)}</div>
         <h1 class="page-title">${esc(s.name)}</h1>
         <a href="${esc(s.url)}" target="_blank" rel="noopener" class="detail-url">${esc(s.url)}
           <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </a>
       </div>
       <div class="detail-actions">
-        <button type="button" class="btn-outline" id="btn-copy-url">Copy URL</button>
-        <button type="button" class="btn-primary" id="btn-rescan">Re-scan</button>
+        <button type="button" class="btn-outline" id="btn-copy-url">Копировать URL</button>
+        <button type="button" class="btn-primary" id="btn-rescan">Обновить</button>
       </div>
     </div>`;
   }
@@ -738,24 +716,25 @@
     switch (detailTab) {
       case "Upstream":
         return renderDataTable(
-          ["Upstream", "Address", "Status", "Errors"],
+          ["Upstream", "Адрес", "Статус", "Ошибки"],
           (s.upstreams || []).map((u) => [u.name, u.address, statusPill(u.status), esc(u.errors)])
         );
       case "Build":
         return renderDataTable(
-          ["Parameter", "Value"],
+          ["Параметр", "Значение"],
           (s.build || []).map((b) => [`<span class="muted">${esc(b.name)}</span>`, esc(b.value)])
         );
-      case "Issues":
-        return renderIssuesTab(s);
       case "Certs":
         return renderDataTable(
-          ["Domain", "Issuer", "Expires", "Days Left"],
+          ["Домен", "Путь", "Issuer", "Истекает", "Осталось"],
           (s.certs || []).map((c) => [
-            esc(c.domain),
-            esc(c.issuer),
-            esc(c.expires),
-            `<span class="${c.days_left < 30 ? "t-danger" : "t-primary"}">${c.days_left}d</span>`,
+            esc(c.domain || "—"),
+            `<span class="muted" style="font-family:var(--font-mono);font-size:0.75rem">${esc(c.path || "—")}</span>`,
+            esc(c.issuer || "—"),
+            esc(c.expires || "—"),
+            c.status === "cert_not_found" || c.status === "cert_invalid_pem"
+              ? `<span class="t-danger">${esc(c.status)}</span>`
+              : `<span class="${c.days_left < 30 ? "t-danger" : "t-primary"}">${c.days_left}д</span>`,
           ])
         );
       case "Blast-radius":
@@ -929,7 +908,7 @@
         return renderOverview();
       case "agents":
         return renderAgents();
-      case "snapshots":
+      case "nodes":
         return renderSnapshotsList();
       case "snapshot-detail":
         return renderSnapshotDetail(route.id);
@@ -979,13 +958,10 @@
 
   function patchKpiGrid(kpi) {
     const cards = document.querySelectorAll(".kpi-grid .kpi-card");
-    if (cards.length < 4) return false;
-    const critical = parseInt(kpi.critical_issues, 10) || 0;
+    if (cards.length < 2) return false;
     const d = kpi.deltas || {};
     updateKpiCardEl(cards[0], kpi.agents_online, kpi.agents_suffix, "t-primary", false, d.agents_online);
-    updateKpiCardEl(cards[1], kpi.critical_issues, null, "t-danger", critical > 0, d.critical_issues);
-    updateKpiCardEl(cards[2], kpi.warnings, null, "t-warning", false, d.warnings);
-    updateKpiCardEl(cards[3], kpi.upstream_healthy, null, "t-highlight", false, d.upstream_healthy);
+    updateKpiCardEl(cards[1], kpi.upstream_healthy, null, "t-highlight", false, d.upstream_healthy);
     return true;
   }
 
@@ -996,13 +972,14 @@
     if (!bars || !bars.length) return false;
     const now = new Date();
     const labels = bars.map((_, i) => {
-      if (i === bars.length - 1) return { text: "NOW", now: true };
+      if (i === bars.length - 1) return { text: "сейчас", now: true };
       const m = new Date(now - (bars.length - 1 - i) * 60000);
       return { text: m.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), now: false };
     });
     const axisSparse = labels.filter((_, i) => i === 0 || i === Math.floor(labels.length / 2) || i === labels.length - 1);
     const chart = panel.querySelector(".health-chart");
     const axis = panel.querySelector(".health-axis");
+    const hosts = panel.querySelector(".health-host-legend");
     if (!chart || !axis) return false;
     chart.innerHTML = bars
       .map((b) => {
@@ -1010,8 +987,13 @@
         return `<div class="health-bar ${b.bad ? "bad" : "ok"}" style="height:${h}%" title="${esc(b.agent)}: ${Math.round(b.pct)}%"></div>`;
       })
       .join("");
+    if (hosts) {
+      hosts.innerHTML = bars
+        .map((b) => `<span class="health-host-tick" title="${esc(b.agent)}">${esc(shortHost(b.agent, 14))}</span>`)
+        .join("");
+    }
     axis.innerHTML = axisSparse
-      .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "NOW" : l.text)}</span>`)
+      .map((l) => `<span class="${l.now ? "now" : ""}">${esc(l.now ? "сейчас" : l.text)}</span>`)
       .join("");
     return true;
   }
@@ -1073,7 +1055,6 @@
     }
     if (!patchKpiGrid(state.kpi)) return false;
     if (!patchHealthOverview()) return false;
-    if (!patchSeverityPanel()) return false;
     const snaps = state.snapshots || [];
     const list = filterSnapshots(snaps);
     const shown = list.slice(0, 10);
@@ -1197,7 +1178,7 @@
         return patchOverview();
       case "agents":
         return patchAgents();
-      case "snapshots":
+      case "nodes":
         return patchSnapshotsList();
       case "snapshot-detail":
         return patchSnapshotDetail();
@@ -1232,18 +1213,18 @@
         if (e.target.closest("button")) return;
         const action = el.dataset.action;
         if (action === "correlation") navigate("correlation");
-        else navigate("snapshots/" + el.dataset.snap);
+        else navigate("nodes/" + el.dataset.snap);
       });
     });
     document.querySelectorAll("button[data-action]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         if (el.dataset.action === "correlation") navigate("correlation");
-        else navigate("snapshots/" + el.dataset.snap);
+        else navigate("nodes/" + el.dataset.snap);
       });
     });
     document.querySelectorAll(".agent-table tr.clickable").forEach((el) => {
-      el.addEventListener("click", () => navigate("snapshots/" + el.dataset.snap));
+      el.addEventListener("click", () => navigate("nodes/" + el.dataset.snap));
     });
     document.querySelectorAll("[data-tab]").forEach((el) => {
       el.addEventListener("click", () => {
@@ -1266,8 +1247,6 @@
     }
     const rescanBtn = $("#btn-rescan");
     if (rescanBtn) rescanBtn.addEventListener("click", () => refresh(true));
-    const addBtn = $("#btn-add-agent");
-    if (addBtn) addBtn.addEventListener("click", () => openAgentModal());
     const exploreRun = $("#explore-run");
     if (exploreRun) {
       exploreRun.addEventListener("click", () => runExplore(exploreRun.dataset.agentUrl));
@@ -1312,19 +1291,6 @@
     } catch (e) {
       out.innerHTML = `<div class="empty-dashed t-danger">${esc("Ошибка explain: " + e.message)}</div>`;
     }
-  }
-
-  function openAgentModal() {
-    const modal = $("#agent-modal");
-    const err = $("#agent-error");
-    if (err) {
-      err.textContent = "";
-      err.classList.add("hidden");
-    }
-    $("#agent-url").value = "";
-    $("#agent-region").value = "";
-    $("#agent-name").value = "";
-    modal.showModal();
   }
 
   function updateMeta() {
@@ -1501,40 +1467,6 @@
     }
   }
 
-  function initAgentModal() {
-    const modal = $("#agent-modal");
-    const form = $("#agent-form");
-    if (!modal || !form) return;
-    $("#agent-cancel").addEventListener("click", () => modal.close());
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const err = $("#agent-error");
-      err.classList.add("hidden");
-      const body = {
-        url: $("#agent-url").value.trim(),
-        region: $("#agent-region").value.trim(),
-        name: $("#agent-name").value.trim(),
-      };
-      try {
-        const r = await fetch("/api/v1/agents", {
-          method: "POST",
-          headers: { ...headers(), "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(text || "HTTP " + r.status);
-        }
-        modal.close();
-        await refresh(false);
-        navigate("agents");
-      } catch (ex) {
-        err.textContent = ex.message;
-        err.classList.remove("hidden");
-      }
-    });
-  }
-
   window.addEventListener("hashchange", () => {
     if (!unlocked) return;
     route = parseRoute();
@@ -1560,7 +1492,6 @@
   });
 
   initAuthGate();
-  initAgentModal();
   // Если в URL есть ?token= — сохранить до проверки
   const bootToken = new URLSearchParams(location.search).get("token");
   if (bootToken) saveToken(bootToken.trim());

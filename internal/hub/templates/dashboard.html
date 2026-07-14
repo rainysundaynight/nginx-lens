@@ -94,25 +94,6 @@
       </footer>
     </main>
   </div>
-  <!-- ---------- Add agent modal ---------- -->
-  <!-- Регистрация runtime-агента через POST /api/v1/agents -->
-  <dialog class="modal" id="agent-modal">
-    <form method="dialog" class="modal-box" id="agent-form">
-      <h2>Add agent</h2>
-      <p class="muted">Агент сохранится в runtime-реестр hub (переживает рестарт). Для постоянного списка — YAML <code>web.hub.agents</code>.</p>
-      <label class="modal-label" for="agent-url">URL</label>
-      <input type="url" id="agent-url" placeholder="http://10.0.0.5:8088" required autocomplete="off"/>
-      <label class="modal-label" for="agent-region">Region</label>
-      <input type="text" id="agent-region" placeholder="EU-WEST" autocomplete="off"/>
-      <label class="modal-label" for="agent-name">Name (optional)</label>
-      <input type="text" id="agent-name" placeholder="lon-prod-nginx-01" autocomplete="off"/>
-      <p class="modal-error hidden" id="agent-error"></p>
-      <div class="modal-actions">
-        <button type="button" class="btn-ghost" id="agent-cancel">Отмена</button>
-        <button type="submit" class="btn-primary">Добавить</button>
-      </div>
-    </form>
-  </dialog>
   <script>
     window.NGINX_LENS_REFRESH = {{ refresh_interval }} * 1000;
     window.NGINX_LENS_AUTH_REQUIRED = {{ auth_required }};

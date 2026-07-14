@@ -21,6 +21,7 @@ type CertIssue struct {
 	Severity    Severity  `json:"severity"`
 	CertPath    string    `json:"cert_path"`
 	ServerName  string    `json:"server_name,omitempty"`
+	Issuer      string    `json:"issuer,omitempty"`
 	ExpiresAt   time.Time `json:"expires_at,omitempty"`
 	DaysLeft    int       `json:"days_left,omitempty"`
 	Message     string    `json:"message"`
@@ -159,27 +160,47 @@ func nearestServer(item WalkItem) *parser.Node {
 type CertTimelineEntry struct {
 	CertPath   string    `json:"cert_path"`
 	ServerName string    `json:"server_name"`
+	Issuer     string    `json:"issuer,omitempty"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	DaysLeft   int       `json:"days_left"`
 	Severity   Severity  `json:"severity"`
+	Status     string    `json:"status,omitempty"`
 }
 
-// BuildCertTimeline строит таймлайн из cert issues.
+// BuildCertTimeline строит таймлайн из cert issues (включая здоровые cert_ok).
 func BuildCertTimeline(issues []CertIssue) []CertTimelineEntry {
 	var timeline []CertTimelineEntry
 	seen := make(map[string]struct{})
 	for _, c := range issues {
-		if c.ExpiresAt.IsZero() {
+		if c.ExpiresAt.IsZero() && c.Type != "cert_not_found" && c.Type != "cert_invalid_pem" {
 			continue
 		}
 		key := c.CertPath + "\x00" + c.ServerName
 		if _, ok := seen[key]; ok {
+			// приоритет проблем над cert_ok
+			if c.Type == "cert_ok" {
+				continue
+			}
+			for i := range timeline {
+				if timeline[i].CertPath == c.CertPath && timeline[i].ServerName == c.ServerName {
+					if !c.ExpiresAt.IsZero() {
+						timeline[i].ExpiresAt = c.ExpiresAt
+						timeline[i].DaysLeft = c.DaysLeft
+					}
+					timeline[i].Severity = c.Severity
+					timeline[i].Status = c.Type
+					if c.Issuer != "" {
+						timeline[i].Issuer = c.Issuer
+					}
+					break
+				}
+			}
 			continue
 		}
 		seen[key] = struct{}{}
 		timeline = append(timeline, CertTimelineEntry{
-			CertPath: c.CertPath, ServerName: c.ServerName,
-			ExpiresAt: c.ExpiresAt, DaysLeft: c.DaysLeft, Severity: c.Severity,
+			CertPath: c.CertPath, ServerName: c.ServerName, Issuer: c.Issuer,
+			ExpiresAt: c.ExpiresAt, DaysLeft: c.DaysLeft, Severity: c.Severity, Status: c.Type,
 		})
 	}
 	return timeline
@@ -278,17 +299,28 @@ func checkCertFile(path, serverNames, file string, warnDays int, readFile CertRe
 	cert := certs[0]
 	now := time.Now()
 	daysLeft := int(cert.NotAfter.Sub(now).Hours() / 24)
+	issuer := cert.Issuer.CommonName
+	if issuer == "" {
+		issuer = cert.Issuer.String()
+	}
+	// Всегда фиксируем найденный сертификат для UI timeline (даже без проблем).
+	issues = append(issues, CertIssue{
+		Type: "cert_ok", Severity: SeverityLow,
+		CertPath: path, ServerName: serverNames, Issuer: issuer,
+		ExpiresAt: cert.NotAfter, DaysLeft: daysLeft, File: file,
+		Message: fmt.Sprintf("действителен до %s (%d дн.)", cert.NotAfter.Format("2006-01-02"), daysLeft),
+	})
 	if now.After(cert.NotAfter) {
 		issues = append(issues, CertIssue{
 			Type: "cert_expired", Severity: SeverityHigh,
-			CertPath: path, ServerName: serverNames, ExpiresAt: cert.NotAfter, DaysLeft: daysLeft,
+			CertPath: path, ServerName: serverNames, Issuer: issuer, ExpiresAt: cert.NotAfter, DaysLeft: daysLeft,
 			Message: fmt.Sprintf("сертификат истёк %s", cert.NotAfter.Format("2006-01-02")),
 			FixHint: "Обновите сертификат и выполните nginx -s reload", File: file,
 		})
 	} else if daysLeft <= warnDays {
 		issues = append(issues, CertIssue{
 			Type: "cert_expiring", Severity: SeverityMedium,
-			CertPath: path, ServerName: serverNames, ExpiresAt: cert.NotAfter, DaysLeft: daysLeft,
+			CertPath: path, ServerName: serverNames, Issuer: issuer, ExpiresAt: cert.NotAfter, DaysLeft: daysLeft,
 			Message: fmt.Sprintf("истекает через %d дней", daysLeft),
 			FixHint: "Запланируйте обновление сертификата", File: file,
 		})
