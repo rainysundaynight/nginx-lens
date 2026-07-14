@@ -290,7 +290,7 @@
     return `<div class="panel health-panel"${animAttr(120)}>
       <div class="panel-head">
         <div>
-          <h3 class="panel-title">Состояние health</h3>
+          <h3 class="panel-title">Состояние агентов</h3>
           <p class="panel-sub">Агрегированные health-сигналы по агентам · live</p>
         </div>
         <span class="panel-badge"><span class="panel-badge-dot"></span>Live</span>
@@ -409,7 +409,7 @@
                 <div class="t-danger" style="opacity:0.8;margin-bottom:0.25rem">[error] ${esc(corr.error)}</div>
                 <div class="analytics-indent">↳ upstream [${esc(corr.upstream)}]<br/>↳ location: ${esc((corr.locations && corr.locations[0]) || "—")}</div>
               </div>`
-            : '<div class="muted" style="font-family:var(--font-mono);font-size:0.6875rem">Нет ошибок для корреляции (нужны access/error logs у агента)</div>'
+            : '<div class="muted" style="font-family:var(--font-mono);font-size:0.6875rem">Нет ошибок для корреляции</div>'
         }
       </div>
       <div class="analytics-panel">
@@ -457,9 +457,7 @@
     const snaps = state.snapshots || [];
     return `<div class="fleet-stack">
       ${renderKpiCards(state.kpi, 0)}
-      <div class="overview-grid overview-grid-single">
-        ${renderHealthOverview(state.health_bars)}
-      </div>
+      ${renderHealthOverview(state.health_bars)}
       ${renderAgentsFeed(snaps)}
       ${renderAnalyticsPanels()}
     </div>`;
@@ -658,6 +656,9 @@
         </div>
         <svg class="snap-card-chevron icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
       </div>
+      <div class="snap-scores">
+        <div><div class="score-cell-label">Score</div><div class="score-cell-val t-primary">${s.config_score}<span class="kpi-suffix">/100</span></div></div>
+      </div>
       <div class="snap-card-url">nginx/${esc(s.version || "—")} · upd: ${esc(s.updated_at)}</div>
     </div>`;
   }
@@ -677,6 +678,25 @@
     return `
       <a class="back-link" href="#/nodes">← К списку конфигураций</a>
       ${renderDetailHeader(s)}
+      <div class="score-banner"${animAttr()}>
+        <div>
+          <div class="kpi-label">Config Score</div>
+          <div class="kpi-row"><span class="score-big ${scoreTone(s.config_score)}">${s.config_score}</span><span class="kpi-suffix" style="font-size:1.125rem">/100</span></div>
+        </div>
+        <div style="flex:1;min-width:280px;max-width:28rem">
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:${s.config_score}%"></div></div>
+          <div class="score-axis"><span>0</span><span>POOR · 50</span><span>GOOD · 80</span><span>100</span></div>
+        </div>
+      </div>
+      <div class="cat-grid">${[
+        ["Security", (s.categories || {}).security],
+        ["Reliability", (s.categories || {}).reliability],
+        ["Performance", (s.categories || {}).performance],
+        ["Maintainability", (s.categories || {}).maintainability],
+        ["Observability", (s.categories || {}).observability],
+      ]
+        .map(([label, score]) => renderCategoryCard(label, score))
+        .join("")}</div>
       <div>
         <div class="tabs">${TABS.map((t) => `<button type="button" class="tab-btn${detailTab === t.id ? " active" : ""}" data-tab="${esc(t.id)}">${esc(t.label)}</button>`).join("")}</div>
         <div class="tab-panel">${renderTabContent(s)}</div>
@@ -701,14 +721,13 @@
     </div>`;
   }
 
-  function renderCategoryCard(label, score, issues) {
+  function renderCategoryCard(label, score) {
     const n = Math.round(score || 0);
     const barCls = n >= 70 ? "impact-low" : n >= 50 ? "impact-med" : "impact-high";
     return `<div class="cat-card">
       <div class="cat-card-label">${esc(label)}</div>
       <div class="kpi-row"><span class="cat-card-score ${scoreTone(n)}">${n}</span><span class="kpi-suffix">/ 100</span></div>
       <div class="cat-card-bar"><div class="cat-card-bar-fill ${barCls}" style="width:${n}%"></div></div>
-      <div class="muted" style="font-family:var(--font-mono);font-size:0.625rem">${issues || 0} issues</div>
     </div>`;
   }
 
@@ -966,7 +985,7 @@
   }
 
   function patchHealthOverview() {
-    const panel = document.querySelector(".overview-grid .health-panel");
+    const panel = document.querySelector(".fleet-stack .health-panel") || document.querySelector(".overview-grid .health-panel");
     if (!panel) return false;
     const bars = state.health_bars;
     if (!bars || !bars.length) return false;

@@ -66,9 +66,9 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); letter-spacing: -0.01
 .layout { position: relative; z-index: 1; display: flex; min-height: 100vh; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .view { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 2.25rem; }
-.fleet-stack { display: flex; flex-direction: column; gap: 2.25rem; }
-.kpi-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 48rem; }
-.overview-grid-single { grid-template-columns: 1fr; }
+.fleet-stack { display: flex; flex-direction: column; gap: 2.25rem; width: 100%; }
+.fleet-stack > .health-panel { width: 100%; }
+.kpi-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sidebar-logout {
   display: flex; justify-content: center; align-items: center;
   padding: 0.625rem 0.75rem; border-radius: 0.75rem;
