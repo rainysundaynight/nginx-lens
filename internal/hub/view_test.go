@@ -57,3 +57,26 @@ func TestBuildHubStateOnline(t *testing.T) {
 func TestAgentSlug(t *testing.T) {
 	assert.Equal(t, "127.0.0.1-8090", agentSlug("http://127.0.0.1:8090"))
 }
+
+func TestSplitConfigureArgs(t *testing.T) {
+	rows := splitConfigureArgs("--prefix=/etc/nginx --with-http_ssl_module --build=x5_foodtech_gitlab_ID_4492060")
+	assert.Equal(t, []HubKV{
+		{Name: "prefix", Value: "/etc/nginx"},
+		{Name: "with-http_ssl_module", Value: "yes"},
+		{Name: "build", Value: "x5_foodtech_gitlab_ID_4492060"},
+	}, rows)
+}
+
+func TestParseBuildSplitsConfigure(t *testing.T) {
+	rows := parseBuild(map[string]interface{}{
+		"built_by":        "gcc",
+		"configure_args":  "--build=x5_foodtech_gitlab_ID_4492060 --with-pcre-jit",
+		"openssl":         "OpenSSL 3.0.0",
+	})
+	assert.Equal(t, []HubKV{
+		{Name: "Built by", Value: "gcc"},
+		{Name: "OpenSSL", Value: "OpenSSL 3.0.0"},
+		{Name: "build", Value: "x5_foodtech_gitlab_ID_4492060"},
+		{Name: "with-pcre-jit", Value: "yes"},
+	}, rows)
+}

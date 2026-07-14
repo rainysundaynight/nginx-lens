@@ -556,10 +556,32 @@ func parseBuild(build map[string]interface{}) []HubKV {
 		rows = append(rows, HubKV{Name: "TLS", Value: v})
 	}
 	if v := stringVal(build["configure_args"]); v != "" {
-		if len(v) > 120 {
-			v = v[:120] + "…"
+		rows = append(rows, splitConfigureArgs(v)...)
+	}
+	return rows
+}
+
+// splitConfigureArgs разбирает флаги nginx -V --configure в пары ключ=значение.
+func splitConfigureArgs(raw string) []HubKV {
+	var rows []HubKV
+	for _, part := range strings.Fields(raw) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
 		}
-		rows = append(rows, HubKV{Name: "Configure", Value: v})
+		part = strings.TrimPrefix(part, "--")
+		if part == "" {
+			continue
+		}
+		name, value := part, "yes"
+		if i := strings.IndexByte(part, '='); i >= 0 {
+			name = part[:i]
+			value = part[i+1:]
+		}
+		if name == "" {
+			continue
+		}
+		rows = append(rows, HubKV{Name: name, Value: value})
 	}
 	return rows
 }

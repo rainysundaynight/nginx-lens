@@ -27,7 +27,6 @@
     { id: "Certs", label: "Сертификаты" },
     { id: "Blast-radius", label: "Зона поражения" },
     { id: "Errors", label: "Ошибки" },
-    { id: "Explore", label: "Маршрут" },
   ];
   const ICONS = {
     activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
@@ -359,7 +358,7 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">Активные агенты</h2>
-          <p class="section-sub">Мониторинг ключевых узлов · клик — детальная конфигурация</p>
+          <p class="section-sub">Мониторинг ключевых узлов</p>
         </div>
         <div class="section-meta">1–${shown.length} of ${list.length}</div>
       </div>
@@ -413,7 +412,7 @@
         }
       </div>
       <div class="analytics-panel">
-        <h4 class="analytics-title">Blast-radius (upstream → location)</h4>
+        <h4 class="analytics-title">Зона поражения (upstream → location)</h4>
         ${
           topBlast.length
             ? topBlast
@@ -586,9 +585,9 @@
     ];
     return `
       ${pageHeader(
-        "Раздел · 01",
         "Агенты",
-        "Парк nginx-агентов из web.hub.agents. Кликните по строке для детальной конфигурации."
+        "Агенты",
+        "Подключенные агенты."
       )}
       <div class="stat-grid">${stats
         .map(
@@ -630,7 +629,7 @@
   function renderSnapshotsList() {
     const snaps = filterSnapshots(state.snapshots || []);
     return `
-      ${pageHeader("Раздел · 02", "Конфигурации", "Конфигурации nginx с каждого агента. Откройте карточку для полного разбора.")}
+      ${pageHeader("Конфигурации", "Конфигурации", "Конфигурации nginx с каждого агента.")}
       <div class="snap-grid">${snaps.length ? snaps.map(renderSnapCard).join("") : '<div class="empty">Нет агентов</div>'}</div>
     `;
   }
@@ -760,65 +759,9 @@
         return renderBlastTab(s);
       case "Errors":
         return renderErrorsTab(s);
-      case "Explore":
-        return renderExploreTab(s);
       default:
         return "";
     }
-  }
-
-  function renderExploreTab(s) {
-    return `<div class="explore-box">
-      <div class="kpi-label" style="margin-bottom:0.5rem">Explain route</div>
-      <p class="muted" style="margin:0 0 1rem">Интерактивный разбор маршрутизации: server → location → proxy_pass / upstream.</p>
-      <div class="explore-form">
-        <input type="url" id="explore-url" placeholder="https://example.com/api/v1/users" value=""/>
-        <button type="button" class="btn-primary" id="explore-run" data-agent-url="${esc(s.url)}">Explain</button>
-      </div>
-      <div id="explore-result"><div class="empty-dashed">Введите URL и нажмите Explain</div></div>
-      <button type="button" class="explore-toggle" id="explore-raw-toggle">Показать raw snapshot JSON</button>
-      <pre class="explore-json hidden" id="explore-raw">${esc(JSON.stringify(s, null, 2))}</pre>
-    </div>`;
-  }
-
-  function renderExplainResult(data) {
-    if (!data) return '<div class="empty-dashed">Пустой ответ</div>';
-    const nodeLabel = (n) => {
-      if (!n) return "";
-      return n.args || n.arg || n.directive || n.block || "";
-    };
-    const chips = [
-      { label: "URL", value: data.url || "—" },
-      { label: "Server", value: nodeLabel(data.server) || "—" },
-      { label: "Location", value: nodeLabel(data.location) || "—" },
-      { label: "Upstream", value: data.upstream || "—" },
-      { label: "Proxy pass", value: data.proxy_pass || "—" },
-    ];
-    const steps = Array.isArray(data.trace) ? data.trace : [];
-    return `
-      <div class="explore-summary">${chips
-        .map(
-          (c) => `<div class="explore-chip">
-            <div class="explore-chip-label">${esc(c.label)}</div>
-            <div class="explore-chip-val">${esc(c.value)}</div>
-          </div>`
-        )
-        .join("")}</div>
-      <div class="explore-trace">${
-        steps.length
-          ? steps
-              .map(
-                (step, i) => `<div class="explore-step${step.matched ? " matched" : ""}">
-                  <div class="explore-step-idx">${i + 1}</div>
-                  <div class="explore-step-body">
-                    <div class="explore-step-name">${esc(step.step || "step")}</div>
-                    <div class="explore-step-detail">${esc(step.detail || "")}</div>
-                  </div>
-                </div>`
-              )
-              .join("")
-          : '<div class="empty-dashed">Trace пуст</div>'
-      }</div>`;
   }
 
   function renderDataTable(headers, rows) {
@@ -867,7 +810,7 @@
       return c.upstream.toLowerCase().includes(q) || c.agent.toLowerCase().includes(q) || c.error.toLowerCase().includes(q);
     });
     return `
-      ${pageHeader("Section · 03", "Error Log Correlation", "Сопоставление upstream сбоев с записями error log. Сгруппировано по incident-окнам.")}
+      ${pageHeader("Корреляция", "Корреляция", "Сопоставление upstream сбоев с записями error log. Сгруппировано по incident-окнам.")}
       ${items.length ? items.map(renderCorrCard).join("") : '<div class="empty-dashed">Нет корреляций</div>'}
     `;
   }
@@ -900,7 +843,7 @@
       return g.upstream.toLowerCase().includes(searchQuery.toLowerCase());
     });
     return `
-      ${pageHeader("Section · 04", "Blast-radius", "Какие location затрагивает каждый upstream. % impact = доля запросов с upstream-ошибками.")}
+      ${pageHeader("Зона поражения", "Зона поражения", "Какие location затрагивает каждый upstream. % impact = доля запросов с upstream-ошибками.")}
       ${groups.length ? groups.map(renderBlastGroup).join("") : '<div class="empty-dashed">Нет dependency graph</div>'}
     `;
   }
@@ -1258,50 +1201,6 @@
     }
     const rescanBtn = $("#btn-rescan");
     if (rescanBtn) rescanBtn.addEventListener("click", () => refresh(true));
-    const exploreRun = $("#explore-run");
-    if (exploreRun) {
-      exploreRun.addEventListener("click", () => runExplore(exploreRun.dataset.agentUrl));
-      const urlInput = $("#explore-url");
-      if (urlInput) {
-        urlInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            runExplore(exploreRun.dataset.agentUrl);
-          }
-        });
-      }
-    }
-    const rawToggle = $("#explore-raw-toggle");
-    if (rawToggle) {
-      rawToggle.addEventListener("click", () => {
-        const raw = $("#explore-raw");
-        if (!raw) return;
-        const open = !raw.classList.contains("hidden");
-        raw.classList.toggle("hidden", open);
-        rawToggle.textContent = open ? "Показать raw snapshot JSON" : "Скрыть raw snapshot JSON";
-      });
-    }
-  }
-
-  async function runExplore(agentURL) {
-    const input = $("#explore-url");
-    const out = $("#explore-result");
-    if (!input || !out) return;
-    const url = input.value.trim();
-    if (!url) {
-      out.innerHTML = '<div class="empty-dashed">Укажите URL маршрута</div>';
-      return;
-    }
-    out.innerHTML = '<div class="muted" style="font-family:var(--font-mono);font-size:0.75rem">Loading…</div>';
-    try {
-      const q = new URLSearchParams({ agent: agentURL, url: url });
-      const r = await fetch("/api/v1/explain?" + q.toString(), { headers: headers() });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const data = await r.json();
-      out.innerHTML = renderExplainResult(data);
-    } catch (e) {
-      out.innerHTML = `<div class="empty-dashed t-danger">${esc("Ошибка explain: " + e.message)}</div>`;
-    }
   }
 
   function updateMeta() {
