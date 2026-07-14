@@ -1127,15 +1127,14 @@
     if (scoreBar) scoreBar.style.width = s.config_score + "%";
     document.querySelectorAll(".cat-card").forEach((card, i) => {
       const cats = s.categories || {};
-      const ib = s.issues_breakdown || {};
       const entries = [
-        ["Security", cats.security, ib.security],
-        ["Reliability", cats.reliability, ib.reliability],
-        ["Performance", cats.performance, ib.performance],
-        ["Maintainability", cats.maintainability, ib.maintainability],
-        ["Observability", cats.observability, ib.observability],
+        ["Security", cats.security],
+        ["Reliability", cats.reliability],
+        ["Performance", cats.performance],
+        ["Maintainability", cats.maintainability],
+        ["Observability", cats.observability],
       ];
-      const [label, score, issues] = entries[i] || [];
+      const [label, score] = entries[i] || [];
       if (label == null) return;
       const n = Math.round(score || 0);
       const barCls = n >= 70 ? "impact-low" : n >= 50 ? "impact-med" : "impact-high";
@@ -1149,15 +1148,8 @@
         fill.className = "cat-card-bar-fill " + barCls;
         fill.style.width = n + "%";
       }
-      const iss = card.querySelector(".muted");
-      if (iss) iss.textContent = (issues || 0) + " issues";
     });
-    const sevCells = document.querySelectorAll(".severity-cell-val");
-    if (sevCells.length >= 3) {
-      sevCells[0].textContent = s.severity.high;
-      sevCells[1].textContent = s.severity.med;
-      sevCells[2].textContent = s.severity.low;
-    }
+    // severity panel временно скрыт вместе с issues
     const tabPanel = document.querySelector(".tab-panel");
     if (tabPanel) tabPanel.innerHTML = renderTabContent(s);
     bindViewEvents();
